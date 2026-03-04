@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="KOSPI 200 야간선물 실시간 시세 서비스 - 한국투자증권 API 기반">
+  <meta name="robots" content="index, follow">
+  <title>야선 - KOSPI 200 야간선물 실시간</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="/assets/favicon.ico">
+  <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="futuresApp" x-init="init()">
+
+  <header class="header">
+    <a href="/" class="header__title">야선 <span style="font-size:0.7em; color: var(--text-secondary);">야간선물</span></a>
+    <nav class="header__nav">
+      <a href="/about.html">서비스 소개</a>
+      <a href="/privacy.html">개인정보</a>
+    </nav>
+  </header>
+
+  <main class="container">
+
+    <!-- Connection & stale banner -->
+    <div x-show="isStale" class="stale-banner">
+      ⚠️ 데이터 지연 — 60초 이상 시세 업데이트가 없습니다
+    </div>
+
+    <div class="dashboard-grid" style="margin-top: 16px;">
+
+      <!-- Left: Price card -->
+      <div class="card">
+        <div class="card__title">KOSPI 200 야간선물 현재가</div>
+
+        <!-- Session status -->
+        <div class="session-status"
+          :class="{
+            'session-status--night': sessionName === 'night',
+            'session-status--auction': sessionName === 'auction_pre' || sessionName === 'auction_close',
+            'session-status--closed': sessionName === 'closed' || sessionName === 'day'
+          }">
+          <span x-show="isMarketOpen" class="live-dot"></span>
+          <span x-text="sessionLabel"></span>
+        </div>
+
+        <!-- Main price -->
+        <div class="price-main"
+          :class="{
+            'price-main--up': priceDirection === 'up',
+            'price-main--down': priceDirection === 'down',
+            'price-main--neutral': priceDirection === 'neutral'
+          }"
+          x-text="formattedPrice">
+        </div>
+
+        <!-- Change -->
+        <div class="price-change">
+          <span :class="{ 'change--up': change > 0, 'change--down': change < 0, 'change--neutral': change === 0 }"
+            x-text="formattedChange"></span>
+          <span :class="{ 'change--up': changePct > 0, 'change--down': changePct < 0, 'change--neutral': changePct === 0 }"
+            x-text="formattedChangePct"></span>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-item__label">거래량</div>
+            <div class="stat-item__value" x-text="formattedVolume"></div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-item__label">시가</div>
+            <div class="stat-item__value" x-text="formattedOpen"></div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-item__label">고가</div>
+            <div class="stat-item__value" style="color: var(--color-up)" x-text="formattedHigh"></div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-item__label">저가</div>
+            <div class="stat-item__value" style="color: var(--color-down)" x-text="formattedLow"></div>
+          </div>
+        </div>
+
+        <!-- Connection status & symbol -->
+        <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between;">
+          <span class="status-badge"
+            :class="{
+              'status-badge--connected': connectionState === 'connected',
+              'status-badge--reconnecting': connectionState === 'reconnecting',
+              'status-badge--stale': connectionState === 'stale',
+              'status-badge--disconnected': connectionState === 'disconnected'
+            }"
+            x-text="connectionLabel">
+          </span>
+          <div class="symbol-info">
+            <span x-text="symbol" style="font-weight: 600;"></span>
+            <span x-text="lastTimestamp ? new Date(lastTimestamp).toLocaleTimeString('ko-KR') : ''"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Chart card -->
+      <div class="card">
+        <div class="card__title">일중 가격 차트</div>
+        <div class="chart-container" id="chart"></div>
+      </div>
+
+    </div>
+
+    <!-- Disclaimer -->
+    <p style="margin-top: 16px; font-size: 0.75rem; color: var(--text-secondary); text-align: center;">
+      본 서비스는 정보 제공 목적으로만 제공됩니다. 투자 권유가 아닙니다.
+      한국투자증권 Open API 기반 실시간 데이터.
+    </p>
+
+  </main>
+
+  <footer class="footer">
+    <p>야선.com &copy; 2026 &nbsp;|&nbsp; <a href="/about.html">서비스 소개</a> &nbsp;|&nbsp; <a href="/privacy.html">개인정보처리방침</a></p>
+    <p style="margin-top: 6px;">본 서비스는 투자 권유가 아닙니다. 투자는 본인 판단과 책임 하에 하시기 바랍니다.</p>
+  </footer>
+
+</body>
+</html>
