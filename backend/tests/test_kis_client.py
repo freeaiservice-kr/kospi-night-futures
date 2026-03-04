@@ -13,8 +13,8 @@ class TestKISWebSocketParser:
         return KISWebSocketClient("ws://test", "key", "101V6", lambda q: None)
 
     def _build_frame(self, fields: list) -> str:
-        """Build a pipe-delimited WS frame: enc|tr_id|count|f0|f1|..."""
-        return "0|H0MFCNT0|1|" + "|".join(fields)
+        """Build a KIS WS frame: enc|tr_id|count|f0^f1^f2^...  (data is ^-delimited)"""
+        return "0|H0MFCNT0|1|" + "^".join(fields)
 
     def test_parse_normal_tick(self):
         # H0MFCNT0 fields: symbol, time, change, sign, change_pct, price, open, high, low, tick_vol, acml_vol

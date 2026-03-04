@@ -122,23 +122,31 @@ class KISWebSocketClient:
             async for message in ws:
                 if self._stop_event.is_set():
                     break
-                await self._handle_message(message)
+                await self._handle_message(ws, message)
 
-    async def _handle_message(self, message: str | bytes):
+    async def _handle_message(self, ws, message: str | bytes):
         """Parse incoming WebSocket frame and invoke callback."""
         if isinstance(message, bytes):
             message = message.decode("utf-8")
 
-        # JSON frames: subscription ack or error
+        # JSON frames: subscription ack, PINGPONG, or error
         if message.startswith("{"):
             try:
                 data = json.loads(message)
+                header = data.get("header", {})
                 body = data.get("body", {})
+
+                # KIS app-level keepalive — must echo back to stay connected
+                if header.get("tr_id") == "PINGPONG":
+                    logger.debug("KIS WS PINGPONG → echoing back")
+                    await ws.send(message)
+                    return
+
                 rt_cd = body.get("rt_cd", "")
                 if rt_cd == "0":
-                    logger.debug("Subscription acknowledged: %s", body.get("msg1", ""))
+                    logger.info("KIS WS subscription OK: %s", body.get("msg1", ""))
                 else:
-                    logger.warning("KIS WS message: %s", body.get("msg1", ""))
+                    logger.debug("KIS WS JSON frame: header=%s body=%s", header, body)
             except json.JSONDecodeError:
                 logger.warning("Could not parse JSON frame: %s", message[:100])
             return
@@ -153,17 +161,20 @@ class KISWebSocketClient:
 
     def _parse_pipe_frame(self, frame: str) -> Optional[FuturesQuote]:
         """
-        Parse KIS pipe-delimited real-time frame.
-        Format: encrypted_flag|tr_id|data_count|field0|field1|...|fieldN
+        Parse KIS real-time WebSocket frame.
+        Header format: enc_flag|tr_id|data_count|<data>
+        Data format:   field0^field1^field2^...^fieldN  (caret-delimited)
+        Official doc example:
+          0|H0MFCNT0|001|101V06^190215^0.75^2^0.20^367.30^...
         """
-        parts = frame.split("|")
+        parts = frame.split("|", 3)  # split header only; keep data intact
         if len(parts) < 4:
             return None
 
         enc_flag = parts[0]
         tr_id = parts[1]
         # data_count = parts[2]  # number of ticks (usually 1)
-        fields = parts[3:]  # actual data starts at index 3
+        fields = parts[3].split("^")  # data section is ^-delimited
 
         if tr_id != self.TR_ID:
             logger.debug("Ignoring tr_id: %s", tr_id)
