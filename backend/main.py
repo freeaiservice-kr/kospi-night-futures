@@ -16,28 +16,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-market_data_service: MarketDataService | None = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global market_data_service
     logger.info("Starting KOSPI Night Futures service...")
-    market_data_service = MarketDataService()
-    app.state.market_data = market_data_service
-    await market_data_service.start()
-    logger.info("MarketDataService started.")
+    market_data = MarketDataService()
+    app.state.market_data = market_data
+    await market_data.start()
+    logger.info("Service started.")
     yield
-    logger.info("Shutting down...")
-    await market_data_service.stop()
+    await market_data.stop()
     logger.info("Shutdown complete.")
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="KOSPI Night Futures API",
-        description="Real-time KOSPI 200 night futures data service",
-        version="0.1.0",
+        title="KOSPI Night Futures",
+        description="KOSPI 200 야간선물 정보 서비스",
+        version="0.2.0",
         lifespan=lifespan,
     )
 
@@ -51,7 +47,6 @@ def create_app() -> FastAPI:
 
     app.include_router(router)
 
-    # Serve frontend static files
     frontend_path = pathlib.Path(__file__).parent.parent / "frontend"
     if frontend_path.exists():
         app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="static")

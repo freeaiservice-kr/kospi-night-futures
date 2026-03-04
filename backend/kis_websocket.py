@@ -24,7 +24,8 @@ class ConnectionState(Enum):
 class KISWebSocketClient:
     """KIS real-time futures data via WebSocket (binary/pipe-delimited frames)."""
 
-    TR_ID = "H0MFCNT0"  # 야간선물 실시간 체결 (KRX night futures real-time ccnl)
+    TR_ID = "H0MFCNT0"     # 야간선물 실시간 체결 (KRX night futures real-time ccnl)
+    ASK_TR_ID = "H0MFASP0"  # 야간선물 실시간 호가 (order book, 0.2s filter)
 
     def __init__(self, ws_url: str, approval_key: str, symbol: str, callback: Callable[[FuturesQuote], None]):
         self._ws_url = ws_url
@@ -34,6 +35,7 @@ class KISWebSocketClient:
         self._state = ConnectionState.DISCONNECTED
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._last_trade: Optional[FuturesQuote] = None  # cached from H0MFCNT0
 
     @property
     def state(self) -> ConnectionState:
@@ -101,23 +103,24 @@ class KISWebSocketClient:
             self._set_state(ConnectionState.CONNECTED)
             logger.info("Connected to KIS WebSocket: %s", self._ws_url)
 
-            # Send subscription message
-            subscribe_msg = {
-                "header": {
-                    "approval_key": self._approval_key,
-                    "custtype": "P",
-                    "tr_type": "1",
-                    "content-type": "utf-8",
-                },
-                "body": {
-                    "input": {
-                        "tr_id": self.TR_ID,
-                        "tr_key": self._symbol,
-                    }
-                },
-            }
-            await ws.send(json.dumps(subscribe_msg))
-            logger.info("Subscribed to %s for symbol %s", self.TR_ID, self._symbol)
+            def _sub_msg(tr_id: str, tr_key: str) -> str:
+                return json.dumps({
+                    "header": {
+                        "approval_key": self._approval_key,
+                        "custtype": "P",
+                        "tr_type": "1",
+                        "content-type": "utf-8",
+                    },
+                    "body": {"input": {"tr_id": tr_id, "tr_key": tr_key}},
+                })
+
+            # Subscribe to trade ticks
+            await ws.send(_sub_msg(self.TR_ID, self._symbol))
+            logger.info("Subscribed to %s (체결) for symbol %s", self.TR_ID, self._symbol)
+
+            # Subscribe to order book (bid/ask) — updates even with no trades
+            await ws.send(_sub_msg(self.ASK_TR_ID, self._symbol))
+            logger.info("Subscribed to %s (호가) for symbol %s", self.ASK_TR_ID, self._symbol)
 
             async for message in ws:
                 if self._stop_event.is_set():
@@ -155,7 +158,7 @@ class KISWebSocketClient:
         quote = self._parse_pipe_frame(message)
         if quote:
             try:
-                await asyncio.get_event_loop().run_in_executor(None, self._callback, quote)
+                self._callback(quote)
             except Exception as e:
                 logger.error("Callback error: %s", e)
 
@@ -175,6 +178,9 @@ class KISWebSocketClient:
         tr_id = parts[1]
         # data_count = parts[2]  # number of ticks (usually 1)
         fields = parts[3].split("^")  # data section is ^-delimited
+
+        if tr_id == self.ASK_TR_ID:
+            return self._parse_orderbook_frame(fields)
 
         if tr_id != self.TR_ID:
             logger.debug("Ignoring tr_id: %s", tr_id)
@@ -230,7 +236,7 @@ class KISWebSocketClient:
             except ValueError:
                 ts = now
 
-            return FuturesQuote(
+            quote = FuturesQuote(
                 symbol=symbol or self._symbol,
                 price=price,
                 change=change,
@@ -242,6 +248,71 @@ class KISWebSocketClient:
                 timestamp=ts,
                 provider="kis",
             )
+            self._last_trade = quote  # cache for orderbook-based quotes
+            return quote
         except (IndexError, ValueError) as e:
             logger.warning("Failed to parse H0MFCNT0 frame: %s | frame[:100]: %s", e, frame[:100])
+            return None
+
+    def _parse_orderbook_frame(self, fields: list[str]) -> Optional[FuturesQuote]:
+        """
+        Parse H0MFASP0 (야간선물 실시간 호가) frame.
+        H0MFASP0 field layout (from KRX야간선물 실시간호가 [실시간-065].xlsx):
+          [0]  FUTS_SHRN_ISCD  선물 단축 종목코드
+          [1]  BSOP_HOUR       영업 시간 HHMMSS
+          [2]  FUTS_ASKP1      매도호가1 (best ask)
+          [3]  FUTS_ASKP2
+          [4]  FUTS_ASKP3
+          [5]  FUTS_ASKP4
+          [6]  FUTS_ASKP5
+          [7]  FUTS_BIDP1      매수호가1 (best bid)
+          ...
+        Uses best bid as price proxy; inherits change/volume from last trade tick.
+        """
+        if len(fields) < 8:
+            return None
+        try:
+            def _f(idx: int) -> float:
+                return float(fields[idx]) if fields[idx] else 0.0
+
+            ask1 = _f(2)
+            bid1 = _f(7)
+
+            if bid1 == 0.0 and ask1 == 0.0:
+                return None
+
+            # Use mid-price; fall back to whichever side is non-zero
+            if bid1 > 0 and ask1 > 0:
+                price = (bid1 + ask1) / 2
+            else:
+                price = bid1 or ask1
+
+            time_str = fields[1].zfill(6)
+            now = datetime.now()
+            try:
+                ts = now.replace(
+                    hour=int(time_str[:2]),
+                    minute=int(time_str[2:4]),
+                    second=int(time_str[4:6]),
+                    microsecond=0,
+                )
+            except ValueError:
+                ts = now
+
+            # Inherit change/volume/open/high/low from last trade if available
+            t = self._last_trade
+            return FuturesQuote(
+                symbol=fields[0] or self._symbol,
+                price=price,
+                change=t.change if t else 0.0,
+                change_pct=t.change_pct if t else 0.0,
+                volume=t.volume if t else 0,
+                open_price=t.open_price if t else 0.0,
+                high_price=max(t.high_price, price) if t else price,
+                low_price=min(t.low_price, price) if t and t.low_price > 0 else price,
+                timestamp=ts,
+                provider="kis_orderbook",
+            )
+        except (IndexError, ValueError) as e:
+            logger.warning("Failed to parse H0MFASP0 frame: %s", e)
             return None

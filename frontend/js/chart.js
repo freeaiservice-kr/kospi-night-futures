@@ -4,7 +4,7 @@
 
 let chart = null;
 let lineSeries = null;
-const chartData = [];
+let lastPointTime = 0;  // track last added time to guard out-of-order points
 
 export function initChart(containerId) {
   const container = document.getElementById(containerId);
@@ -52,25 +52,36 @@ export function initChart(containerId) {
 }
 
 export function addChartPoint(timestamp, price) {
-  if (!lineSeries) return;
+  if (!lineSeries) { console.warn('[chart] lineSeries not ready'); return; }
 
   const time = Math.floor(new Date(timestamp).getTime() / 1000);
-  chartData.push({ time, value: price });
+  if (time < lastPointTime) { console.warn('[chart] out-of-order', time, lastPointTime); return; }
 
-  // Keep sorted and deduplicated
-  chartData.sort((a, b) => a.time - b.time);
-  const seen = new Set();
-  const deduped = chartData.filter(d => {
-    if (seen.has(d.time)) return false;
-    seen.add(d.time);
-    return true;
-  });
+  try {
+    lineSeries.update({ time, value: price });
+    lastPointTime = time;
+  } catch(e) {
+    console.error('[chart] update error', e.message, 'time=', time, 'last=', lastPointTime);
+  }
+}
 
-  lineSeries.setData(deduped);
-  chart?.timeScale().scrollToRealTime();
+/**
+ * Load bulk historical data and fit chart to show all of it.
+ * Data fills left (oldest) → right (newest).
+ */
+export function loadChartHistory(ticks) {
+  if (!lineSeries || !chart) return;
+  const data = ticks
+    .map(t => ({ time: Math.floor(new Date(t.timestamp).getTime() / 1000), value: t.price }))
+    .filter(d => d.time > 0)
+    .sort((a, b) => a.time - b.time);
+  if (data.length === 0) return;
+  lineSeries.setData(data);
+  lastPointTime = data[data.length - 1].time;
+  chart.timeScale().fitContent();
 }
 
 export function resetChart() {
-  chartData.length = 0;
+  lastPointTime = 0;
   lineSeries?.setData([]);
 }

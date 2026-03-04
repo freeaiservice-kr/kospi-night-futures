@@ -86,23 +86,11 @@ body {
   padding: var(--spacing);
 }
 
-/* Grid layout */
+/* Grid layout — single column stack (price card above, chart below) */
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--spacing);
-}
-
-@media (min-width: 768px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (min-width: 1024px) {
-  .dashboard-grid {
-    grid-template-columns: 2fr 3fr;
-  }
 }
 
 /* Card */
@@ -206,18 +194,12 @@ body {
   border: 1px solid rgba(160,160,176,0.2);
 }
 
-/* Chart container */
+/* Chart container — fixed 400px height, full width */
 .chart-container {
   width: 100%;
-  height: 300px;
+  height: 400px;
   border-radius: 6px;
   overflow: hidden;
-}
-
-@media (min-width: 768px) {
-  .chart-container {
-    height: 350px;
-  }
 }
 
 /* Symbol info */

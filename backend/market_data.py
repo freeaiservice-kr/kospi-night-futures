@@ -1,19 +1,40 @@
 import asyncio
 import json
 import logging
+from calendar import monthcalendar, THURSDAY
+from datetime import date as _date, datetime, timezone
 from typing import Optional
 
 from fastapi import WebSocket
 from backend.config import settings
+from backend.intraday_store import IntradayStore
 from backend.kis_client import KISClient, KISAuthError
 from backend.kis_websocket import KISWebSocketClient, ConnectionState
-from backend.market_status import get_market_status
+from backend.market_status import get_market_status, get_session_start_ts
 from backend.models import FuturesQuote
 
 logger = logging.getLogger(__name__)
 
 STALENESS_SECONDS = 60
 REST_POLL_INTERVAL = 1  # 1 req/sec (well within 20 req/s KIS limit)
+ROLLOVER_CHECK_INTERVAL = 15 * 60  # 15 minutes
+
+
+def _second_thursday(year: int, month: int) -> _date:
+    """Return the date of the 2nd Thursday of the given year/month."""
+    weeks = monthcalendar(year, month)
+    thursdays = [w[THURSDAY] for w in weeks if w[THURSDAY] != 0]
+    day = thursdays[1] if len(thursdays) >= 2 else thursdays[0]
+    return _date(year, month, day)
+
+
+def _next_symbol(from_date: _date) -> str:
+    """Compute the front-month CME night futures symbol (A01[Y][MM]) for from_date."""
+    for month in (3, 6, 9, 12):
+        expiry = _second_thursday(from_date.year, month)
+        if from_date <= expiry:
+            return f"A01{from_date.year % 10}{month:02d}"
+    return f"A01{(from_date.year + 1) % 10}03"
 
 
 class MarketDataService:
@@ -32,10 +53,14 @@ class MarketDataService:
         self._ws_client: Optional[KISWebSocketClient] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._staleness_task: Optional[asyncio.Task] = None
+        self._chart_tick_task: Optional[asyncio.Task] = None
+        self._rollover_task: Optional[asyncio.Task] = None
         self._last_quote: Optional[FuturesQuote] = None
+        self._last_trade_price: Optional[float] = None  # H0MFCNT0 체결가만 추적
         self._last_tick_time: float = 0.0
         self._symbol: str = settings.futures_symbol
         self._running = False
+        self._store: Optional[IntradayStore] = None
 
     @property
     def is_connected(self) -> bool:
@@ -47,6 +72,10 @@ class MarketDataService:
         """Start the market data service: connect to KIS, start streaming."""
         self._running = True
         self._kis_client = KISClient()
+
+        # Always initialize intraday storage
+        self._store = IntradayStore()
+        await self._store.init(get_session_start_ts())
 
         if not settings.kis_app_key or settings.kis_app_key == "your_app_key_here":
             logger.warning(
@@ -67,8 +96,10 @@ class MarketDataService:
         except Exception as e:
             logger.error("Failed to start KIS streaming: %s", e)
 
-        # Always start staleness monitor
+        # Always start staleness monitor + chart broadcaster + rollover monitor
         self._staleness_task = asyncio.create_task(self._staleness_monitor())
+        self._chart_tick_task = asyncio.create_task(self._chart_tick_broadcaster())
+        self._rollover_task = asyncio.create_task(self._rollover_monitor())
 
     async def stop(self):
         """Gracefully stop all tasks and connections."""
@@ -83,18 +114,21 @@ class MarketDataService:
         if self._staleness_task:
             self._staleness_task.cancel()
 
+        if self._chart_tick_task:
+            self._chart_tick_task.cancel()
+
+        if self._rollover_task:
+            self._rollover_task.cancel()
+
         if self._kis_client:
             await self._kis_client.close()
 
+        if self._store:
+            await self._store.close()
+
     async def _auto_detect_symbol(self) -> str:
-        """Detect the nearest active KOSPI200 futures contract."""
-        # TODO: implement via KIS API lookup for active contracts
-        # For now, return a placeholder and warn
-        logger.warning(
-            "Auto symbol detection not yet implemented. "
-            "Please set FUTURES_SYMBOL explicitly in .env"
-        )
-        return "101V6"  # placeholder
+        """Detect the nearest active KOSPI200 futures contract using expiry comparison."""
+        return _next_symbol(_date.today())
 
     async def _start_websocket(self):
         """Acquire approval key and start KIS WebSocket client."""
@@ -141,6 +175,8 @@ class MarketDataService:
         import time
         self._last_quote = quote
         self._last_tick_time = time.time()
+        if quote.provider == "kis":  # H0MFCNT0 실제 체결가만 추적
+            self._last_trade_price = quote.price
         asyncio.create_task(self._broadcast_quote(quote))
 
     async def _broadcast_quote(self, quote: FuturesQuote):
@@ -192,6 +228,16 @@ class MarketDataService:
         self._clients.add(ws)
         logger.info("Browser client connected. Total: %d", len(self._clients))
 
+        # Send chart history for current session
+        if self._store:
+            ticks = await self._store.get_session_ticks(get_session_start_ts())
+            if ticks:
+                loop = asyncio.get_event_loop()
+                payload = await loop.run_in_executor(
+                    None, json.dumps, {"type": "chart_history", "ticks": ticks}
+                )
+                await ws.send_text(payload)
+
         # Send current quote immediately if available
         if self._last_quote:
             await self._broadcast_quote(self._last_quote)
@@ -208,3 +254,68 @@ class MarketDataService:
         """Remove a disconnected browser WebSocket client."""
         self._clients.discard(ws)
         logger.info("Browser client disconnected. Total: %d", len(self._clients))
+
+    async def _chart_tick_broadcaster(self):
+        """Broadcast 1-second chart ticks using last known 체결가 (trade price)."""
+        while self._running:
+            await asyncio.sleep(1)
+            price = self._last_trade_price
+            if price is None and self._last_quote:
+                price = self._last_quote.price  # fallback: orderbook mid-price
+            if price is not None:
+                ts_dt = datetime.now(timezone.utc).replace(microsecond=0)
+                ts_iso = ts_dt.isoformat()
+                if self._store:
+                    await self._store.insert(int(ts_dt.timestamp()), price)
+                await self._broadcast_raw(json.dumps({
+                    "type": "chart_tick",
+                    "price": price,
+                    "timestamp": ts_iso,
+                }))
+
+    async def _rollover_monitor(self):
+        """Every 15 minutes, check if the current symbol has expired and roll over."""
+        while self._running:
+            await asyncio.sleep(ROLLOVER_CHECK_INTERVAL)
+            await self._check_rollover()
+
+    async def _check_rollover(self):
+        """Roll over to next contract if current symbol has passed its expiry date."""
+        sym = self._symbol
+        if len(sym) != 6 or not sym.startswith("A01"):
+            return
+        try:
+            year_digit = int(sym[3])
+            month = int(sym[4:6])
+            base_year = (_date.today().year // 10) * 10 + year_digit
+            expiry = _second_thursday(base_year, month)
+            if _date.today() > expiry:
+                new_symbol = _next_symbol(_date.today())
+                if new_symbol != self._symbol:
+                    logger.info("Futures rollover: %s expired → %s", sym, new_symbol)
+                    await self._do_rollover(new_symbol)
+        except Exception as e:
+            logger.warning("Rollover check error: %s", e)
+
+    async def _do_rollover(self, new_symbol: str):
+        """Switch WebSocket subscription to new_symbol after contract expiry."""
+        self._symbol = new_symbol
+        self._last_trade_price = None
+
+        if self._ws_client:
+            await self._ws_client.stop()
+            self._ws_client = None
+        if self._poll_task and not self._poll_task.done():
+            self._poll_task.cancel()
+            self._poll_task = None
+
+        # Notify all browser clients to reset their chart
+        await self._broadcast_raw(json.dumps({
+            "type": "rollover",
+            "symbol": new_symbol,
+        }))
+
+        try:
+            await self._start_websocket()
+        except Exception as e:
+            logger.error("WebSocket restart after rollover failed: %s", e)

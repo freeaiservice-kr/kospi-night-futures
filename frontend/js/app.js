@@ -3,7 +3,7 @@
  */
 
 import { formatPrice, formatVolume, sessionLabel, connectionLabel } from './utils.js';
-import { initChart, addChartPoint, resetChart } from './chart.js';
+import { initChart, addChartPoint, resetChart, loadChartHistory } from './chart.js';
 
 function futuresApp() {
   return {
@@ -123,7 +123,13 @@ function futuresApp() {
         this.isStale = false;
         this.connectionState = 'connected';
         this._resetStaleTimer();
-        addChartPoint(d.timestamp, d.price);
+      } else if (msg.type === 'chart_tick') {
+        addChartPoint(msg.timestamp, msg.price);
+      } else if (msg.type === 'chart_history') {
+        loadChartHistory(msg.ticks);
+      } else if (msg.type === 'rollover') {
+        this.symbol = msg.symbol || this.symbol;
+        resetChart();
       } else if (msg.type === 'status' && msg.state === 'stale') {
         this.isStale = true;
         this.connectionState = 'stale';

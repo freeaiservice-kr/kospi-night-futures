@@ -34,6 +34,9 @@ htmlcov/
 
 # Project-specific
 backend/kis_token_cache.json
+data/*.db
+data/*.db-shm
+data/*.db-wal
 
 # OMC state
 .omc/

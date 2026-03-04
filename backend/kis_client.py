@@ -243,37 +243,20 @@ class KISClient:
 
 def _parse_symbol_expiry(symbol: str) -> Optional[datetime]:
     """
-    Parse expiry date from KIS futures symbol.
-    KRX KOSPI200 futures: 3-letter month code system.
-    Symbol format for KIS: e.g. "101S6" or similar.
-    This is a best-effort parser — consult KIS docs for exact format.
+    Parse expiry date from KIS CME-linked night futures symbol.
+    Format: A01[year_digit][month_2digit]  e.g. "A01603" = March 2026
+    (Source: fo_cme_code.mst master file from KIS)
     """
-    # Month code mapping (KRX futures standard)
-    month_codes = {
-        "F": 1, "G": 2, "H": 3, "J": 4, "K": 5, "M": 6,
-        "N": 7, "Q": 8, "U": 9, "V": 10, "X": 11, "Z": 12,
-    }
-
-    if len(symbol) < 5:
+    if len(symbol) != 6 or not symbol.startswith("A01"):
         return None
 
     try:
-        # Assume format: prefix(3) + month_code(1) + year_digits(1-2)
-        prefix = symbol[:3]
-        month_char = symbol[3].upper()
-        year_part = symbol[4:]
-
-        if month_char not in month_codes:
+        year_digit = int(symbol[3])
+        month = int(symbol[4:6])
+        if month not in (3, 6, 9, 12):
             return None
-
-        month = month_codes[month_char]
-        year_digits = int(year_part)
-        # year_digits is last 1-2 digits of year
-        base_year = (datetime.now().year // 10) * 10 + year_digits
-
-        # 2nd Thursday of expiry month
-        expiry = _second_thursday(base_year, month)
-        return expiry
+        base_year = (datetime.now().year // 10) * 10 + year_digit
+        return _second_thursday(base_year, month)
     except (ValueError, IndexError):
         return None
 

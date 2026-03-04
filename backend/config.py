@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     # KIS API credentials
     kis_app_key: str = Field(default="", description="KIS Open API App Key")
     kis_app_secret: str = Field(default="", description="KIS Open API App Secret")
-    kis_account_no: str = Field(default="", description="KIS Account number (e.g. 00000000-03)")
 
     # KIS API endpoints
     kis_base_url: str = Field(default="https://openapi.koreainvestment.com:9443")

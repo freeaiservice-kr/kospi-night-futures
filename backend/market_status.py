@@ -26,6 +26,30 @@ KRX_HOLIDAYS_2026 = {
 }
 
 
+def get_session_start_ts() -> int:
+    """
+    Return unix timestamp (seconds) of the current night session start.
+    Mirrors the session_start_date logic in get_market_status() using naive local time.
+    """
+    now = datetime.now()
+    open_h, open_m = _parse_time(settings.night_session_open)
+    open_minutes = open_h * 60 + open_m
+    current_minutes = now.hour * 60 + now.minute
+
+    if current_minutes >= open_minutes:
+        session_start_date = now.date()
+    else:
+        session_start_date = now.date() - timedelta(days=1)
+
+    session_start_dt = datetime(
+        session_start_date.year,
+        session_start_date.month,
+        session_start_date.day,
+        open_h, open_m, 0,
+    )
+    return int(session_start_dt.timestamp())
+
+
 def _parse_time(time_str: str):
     """Parse HH:MM string to (hour, minute) tuple."""
     parts = time_str.split(":")
