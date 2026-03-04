@@ -76,7 +76,7 @@ async def get_symbol_info(request: Request):
 async def ws_futures(websocket: WebSocket, request: Request):
     """WebSocket endpoint: real-time futures stream to browsers."""
     await websocket.accept()
-    market_data = _get_market_data(websocket)
+    market_data = _get_market_data(request)
     await market_data.add_client(websocket)
     try:
         while True:
