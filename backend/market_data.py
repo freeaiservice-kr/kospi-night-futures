@@ -55,6 +55,7 @@ class MarketDataService:
         self._staleness_task: Optional[asyncio.Task] = None
         self._chart_tick_task: Optional[asyncio.Task] = None
         self._rollover_task: Optional[asyncio.Task] = None
+        self._session_monitor_task: Optional[asyncio.Task] = None
         self._last_quote: Optional[FuturesQuote] = None
         self._last_trade_price: Optional[float] = None  # H0MFCNT0 체결가만 추적
         self._last_tick_time: float = 0.0
@@ -89,17 +90,21 @@ class MarketDataService:
             if self._symbol == "auto":
                 self._symbol = await self._auto_detect_symbol()
 
-            # Start WebSocket streaming
-            await self._start_websocket()
+            # Only connect to KIS when market is open
+            if get_market_status().is_open:
+                await self._start_websocket()
+            else:
+                logger.info("Market is closed. WebSocket will start at next session open.")
         except KISAuthError as e:
             logger.error("KIS auth failed: %s. Service running without live data.", e)
         except Exception as e:
             logger.error("Failed to start KIS streaming: %s", e)
 
-        # Always start staleness monitor + chart broadcaster + rollover monitor
+        # Always start background monitors
         self._staleness_task = asyncio.create_task(self._staleness_monitor())
         self._chart_tick_task = asyncio.create_task(self._chart_tick_broadcaster())
         self._rollover_task = asyncio.create_task(self._rollover_monitor())
+        self._session_monitor_task = asyncio.create_task(self._session_monitor())
 
     async def stop(self):
         """Gracefully stop all tasks and connections."""
@@ -119,6 +124,9 @@ class MarketDataService:
 
         if self._rollover_task:
             self._rollover_task.cancel()
+
+        if self._session_monitor_task:
+            self._session_monitor_task.cancel()
 
         if self._kis_client:
             await self._kis_client.close()
@@ -150,7 +158,7 @@ class MarketDataService:
         while self._running:
             await asyncio.sleep(10)
             if self._ws_client and not self._ws_client.is_connected and self._running:
-                if self._poll_task is None or self._poll_task.done():
+                if get_market_status().is_open and (self._poll_task is None or self._poll_task.done()):
                     logger.info("WS disconnected, activating REST poll fallback")
                     self._poll_task = asyncio.create_task(self._rest_poll_loop())
             elif self._ws_client and self._ws_client.is_connected:
@@ -160,14 +168,14 @@ class MarketDataService:
                     self._poll_task = None
 
     async def _rest_poll_loop(self):
-        """Poll REST API every 5s as fallback when WebSocket is unavailable."""
+        """Poll REST API every 1s as fallback when WebSocket is unavailable."""
         while self._running:
-            try:
-                if self._kis_client:
+            if get_market_status().is_open and self._kis_client:
+                try:
                     quote = await self._kis_client.get_current_price(self._symbol)
                     self._on_tick(quote)
-            except Exception as e:
-                logger.warning("REST poll error: %s", e)
+                except Exception as e:
+                    logger.warning("REST poll error: %s", e)
             await asyncio.sleep(REST_POLL_INTERVAL)
 
     def _on_tick(self, quote: FuturesQuote):
@@ -259,6 +267,8 @@ class MarketDataService:
         """Broadcast 1-second chart ticks using last known 체결가 (trade price)."""
         while self._running:
             await asyncio.sleep(1)
+            if not get_market_status().is_open:
+                continue
             price = self._last_trade_price
             if price is None and self._last_quote:
                 price = self._last_quote.price  # fallback: orderbook mid-price
@@ -272,6 +282,32 @@ class MarketDataService:
                     "price": price,
                     "timestamp": ts_iso,
                 }))
+
+    async def _session_monitor(self):
+        """Detect market open/close transitions and manage connections accordingly."""
+        was_open = get_market_status().is_open
+        while self._running:
+            await asyncio.sleep(30)
+            status = get_market_status()
+            is_open = status.is_open
+
+            if not was_open and is_open:
+                logger.info("Market session opened. Starting data stream.")
+                if self._store:
+                    await self._store.init(get_session_start_ts())
+                if not self.is_connected and self._kis_client:
+                    try:
+                        await self._start_websocket()
+                    except Exception as e:
+                        logger.error("WebSocket start at session open failed: %s", e)
+
+            elif was_open and not is_open:
+                logger.info("Market session closed. Pausing data stream.")
+                if self._poll_task and not self._poll_task.done():
+                    self._poll_task.cancel()
+                    self._poll_task = None
+
+            was_open = is_open
 
     async def _rollover_monitor(self):
         """Every 15 minutes, check if the current symbol has expired and roll over."""
