@@ -235,6 +235,31 @@ class KISClient:
             expiry_warning=expiry_warning,
         )
 
+    async def get_day_futures_price(self, symbol: str) -> dict:
+        """Fetch current KOSPI200 index price via REST (FHMIF10000000, output3)."""
+        await self._ensure_client()
+        token = await self._get_token()
+        url = f"{settings.kis_base_url}/uapi/domestic-futureoption/v1/quotations/inquire-price"
+        headers = self._make_headers(token, "FHMIF10000000")
+        params = {"FID_COND_MRKT_DIV_CODE": "F", "FID_INPUT_ISCD": symbol}
+        resp = await self._client.get(url, headers=headers, params=params)  # type: ignore
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("rt_cd") != "0":
+            raise KISAPIError(f"KOSPI200 price error: {data.get('msg1')} (symbol={symbol})")
+        output = data.get("output3", {})
+        def _f(k): return float(output.get(k, "0") or "0")
+        return {
+            "symbol": "KOSPI200",
+            "price": _f("bstp_nmix_prpr"),
+            "change": _f("bstp_nmix_prdy_vrss"),
+            "change_pct": _f("bstp_nmix_prdy_ctrt"),
+            "volume": 0,
+            "open": None,
+            "high": None,
+            "low": None,
+        }
+
     async def get_options_board(self, product_code: str, expiry_code: str) -> tuple[list, list]:
         """Fetch options board (call/put) from KIS FHPIF05030100."""
         await self._ensure_client()
