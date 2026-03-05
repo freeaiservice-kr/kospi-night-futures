@@ -1,15 +1,17 @@
 import asyncio
 import json
 import logging
-from calendar import monthcalendar, THURSDAY
-from datetime import date as _date, datetime, timezone
+from calendar import THURSDAY, monthcalendar
+from datetime import date as _date
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import WebSocket
+
 from backend.config import settings
 from backend.intraday_store import IntradayStore
-from backend.kis_client import KISClient, KISAuthError
-from backend.kis_websocket import KISWebSocketClient, ConnectionState
+from backend.kis_client import KISAuthError, KISClient
+from backend.kis_websocket import KISWebSocketClient
 from backend.market_status import get_market_status, get_session_start_ts
 from backend.models import FuturesQuote
 
@@ -138,6 +140,37 @@ class MarketDataService:
         """Detect the nearest active KOSPI200 futures contract using expiry comparison."""
         return _next_symbol(_date.today())
 
+    def get_latest_snapshot(self) -> dict | None:
+        """Return latest quote payload in API-friendly shape.
+
+        Returns None when there is no snapshot yet.
+        """
+        if not self._last_quote:
+            return None
+
+        quote = self._last_quote
+        return {
+            "type": "quote",
+            "state": "connected" if self.is_connected else "disconnected",
+            "last_trade_price": self._last_trade_price,
+            "data": {
+                "symbol": quote.symbol,
+                "price": quote.price,
+                "change": quote.change,
+                "change_pct": quote.change_pct,
+                "volume": quote.volume,
+                "open_price": quote.open_price,
+                "high_price": quote.high_price,
+                "low_price": quote.low_price,
+                "timestamp": quote.timestamp.isoformat(),
+                "provider": quote.provider,
+                "cttr": quote.cttr,
+                "basis": quote.basis,
+                "open_interest": quote.open_interest,
+                "oi_change": quote.oi_change,
+            },
+        }
+
     async def _start_websocket(self):
         """Acquire approval key and start KIS WebSocket client."""
         approval_key = await self._kis_client.get_approval_key()  # type: ignore
@@ -159,7 +192,8 @@ class MarketDataService:
         while self._running:
             await asyncio.sleep(10)
             if self._ws_client and not self._ws_client.is_connected and self._running:
-                if get_market_status().is_open and (self._poll_task is None or self._poll_task.done()):
+                poll_task_ready = self._poll_task is None or self._poll_task.done()
+                if get_market_status().is_open and poll_task_ready:
                     logger.info("WS disconnected, activating REST poll fallback")
                     self._poll_task = asyncio.create_task(self._rest_poll_loop())
             elif self._ws_client and self._ws_client.is_connected:

@@ -8,16 +8,18 @@ Poll intervals: board every 5s, investor every 30s.
 import asyncio
 import json
 import logging
-from calendar import monthcalendar, THURSDAY
-from datetime import date as _date, datetime
+from calendar import THURSDAY, monthcalendar
+from datetime import date as _date
+from datetime import datetime
 from typing import Optional
 
 from fastapi import WebSocket
+
 from backend.config import settings
-from backend.kis_client import KISClient, KISAuthError
-from backend.market_status import get_options_market_status
-from backend.investor_store import InvestorStore
 from backend.futures_store import FuturesStore
+from backend.investor_store import InvestorStore
+from backend.kis_client import KISAuthError, KISClient
+from backend.market_status import get_options_market_status
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +268,45 @@ class OptionsDataService:
     def futures_store(self) -> FuturesStore:
         return self._futures_store
 
+    def get_latest_snapshot(self, product: str = "WKI") -> dict:
+        """Return latest options + investor + futures payload for polling clients."""
+        product_key = product if product in PRODUCTS else "WKI"
+
+        board = self._last_board.get(product_key, {})
+        investor = self._last_investor.get(product_key, {})
+        futures = self._last_futures or {}
+
+        return {
+            "type": "options_latest",
+            "product": product_key,
+            "board": board or {
+                "type": "options_board",
+                "product": product_key,
+                "calls": [],
+                "puts": [],
+                "expiry": "",
+                "expiry_date": None,
+                "updated_at": "",
+            },
+            "investor": investor or {
+                "type": "investor_flow",
+                "product": product_key,
+                "call_investor": {},
+                "put_investor": {},
+                "delta": None,
+            },
+            "futures": futures or {
+                "type": "futures_price",
+                "symbol": None,
+                "price": None,
+                "change": None,
+                "change_pct": None,
+                "high": None,
+                "low": None,
+                "open": None,
+            },
+        }
+
     def remove_client(self, ws: WebSocket):
         self._clients.discard(ws)
         self._client_products.pop(ws, None)
@@ -300,7 +341,10 @@ class OptionsDataService:
                         _, market_iscd, _, _, board_code = cfg
                         expiry = _compute_expiry_code(product_key)
                         expiry_date = _compute_expiry_date(product_key, expiry)
-                        calls_raw, puts_raw = await self._kis_client.get_options_board(board_code, expiry)
+                        calls_raw, puts_raw = await self._kis_client.get_options_board(
+                            board_code,
+                            expiry,
+                        )
                         calls = [_serialize_strike(r) for r in calls_raw]
                         puts = [_serialize_strike(r) for r in puts_raw]
                         from datetime import timezone
@@ -330,7 +374,11 @@ class OptionsDataService:
                     try:
                         cfg = PRODUCTS.get(product_key, PRODUCTS["WKI"])
                         _, market_iscd, call_iscd2, put_iscd2, _ = cfg
-                        inv = await self._kis_client.get_options_investor(market_iscd, call_iscd2, put_iscd2)
+                        inv = await self._kis_client.get_options_investor(
+                            market_iscd,
+                            call_iscd2,
+                            put_iscd2,
+                        )
                         call_inv = _serialize_investor(inv.get("call", {}))
                         put_inv = _serialize_investor(inv.get("put", {}))
                         delta = await self._investor_store.save(product_key, call_inv, put_inv)
@@ -344,7 +392,11 @@ class OptionsDataService:
                         self._last_investor[product_key] = msg
                         await self._broadcast_to_product(product_key, json.dumps(msg))
                     except Exception as e:
-                        logger.warning("Options investor poll error (product=%s): %s", product_key, e)
+                        logger.warning(
+                            "Options investor poll error (product=%s): %s",
+                            product_key,
+                            e,
+                        )
             await asyncio.sleep(INVESTOR_POLL_INTERVAL)
 
     async def _futures_poll_loop(self):

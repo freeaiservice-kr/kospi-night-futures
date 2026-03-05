@@ -1,9 +1,11 @@
-import pytest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
-from datetime import datetime
+
+import pytest
 
 from backend.market_data import MarketDataService
 from backend.market_status import get_market_status
+from backend.models import FuturesQuote
 
 
 class TestMarketStatus:
@@ -70,3 +72,34 @@ class TestMarketDataService:
 
         assert good_ws in service._clients
         assert bad_ws not in service._clients
+
+    def test_get_latest_snapshot_returns_none_when_no_data(self):
+        service = MarketDataService()
+        assert service.get_latest_snapshot() is None
+
+    def test_get_latest_returns_quote_fields_when_present(self):
+        service = MarketDataService()
+        service._last_quote = FuturesQuote(
+            symbol="101V2612",
+            price=100.0,
+            change=1.2,
+            change_pct=1.2,
+            volume=10,
+            open_price=98.0,
+            high_price=101.0,
+            low_price=97.5,
+            timestamp=datetime(2026, 3, 5, 9, 0, tzinfo=timezone.utc),
+            provider="kis",
+            cttr=55.1,
+            basis=0.5,
+            open_interest=1234,
+            oi_change=12,
+        )
+        service._last_trade_price = 100.0
+        latest = service.get_latest_snapshot()
+        assert latest is not None
+        assert latest["type"] == "quote"
+        assert latest["state"] == "disconnected"
+        assert latest["data"]["symbol"] == "101V2612"
+        assert latest["data"]["price"] == 100.0
+        assert latest["last_trade_price"] == 100.0
