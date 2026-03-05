@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
+
 from backend.config import settings
 from backend.models import MarketStatus
 

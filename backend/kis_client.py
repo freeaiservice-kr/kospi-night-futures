@@ -2,14 +2,17 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import httpx
 
 from backend.config import settings
-from backend.kis_models import KISTokenResponse, KISApprovalKeyResponse, KISPriceOutput, KISPriceResponse
+from backend.kis_models import (
+    KISApprovalKeyResponse,
+    KISTokenResponse,
+)
 from backend.models import FuturesQuote, SymbolInfo
 
 logger = logging.getLogger(__name__)
@@ -247,24 +250,42 @@ class KISClient:
         data = resp.json()
         if data.get("rt_cd") != "0":
             raise KISAPIError(f"KOSPI200 price error: {data.get('msg1')} (symbol={symbol})")
-        output = data.get("output3", {})
-        def _f(k): return float(output.get(k, "0") or "0")
+        output3 = data.get("output3", {})
+        output1 = data.get("output1", {})
+
+        def _f(d, *keys):
+            for k in keys:
+                v = d.get(k)
+                if v and v not in ('', '0', '0.00'):
+                    try:
+                        return float(v)
+                    except (ValueError, TypeError):
+                        pass
+            return None
+
+        def _fz(d, *keys):
+            v = _f(d, *keys)
+            return v if v is not None else 0.0
+
         return {
             "symbol": "KOSPI200",
-            "price": _f("bstp_nmix_prpr"),
-            "change": _f("bstp_nmix_prdy_vrss"),
-            "change_pct": _f("bstp_nmix_prdy_ctrt"),
+            "price": _fz(output3, "bstp_nmix_prpr"),
+            "change": _fz(output3, "bstp_nmix_prdy_vrss"),
+            "change_pct": _fz(output3, "bstp_nmix_prdy_ctrt"),
             "volume": 0,
-            "open": None,
-            "high": None,
-            "low": None,
+            "open": _f(output3, "bstp_nmix_oprc") or _f(output1, "stck_oprc"),
+            "high": _f(output3, "bstp_nmix_hgpr") or _f(output1, "stck_hgpr"),
+            "low": _f(output3, "bstp_nmix_lwpr") or _f(output1, "stck_lwpr"),
         }
 
     async def get_options_board(self, product_code: str, expiry_code: str) -> tuple[list, list]:
         """Fetch options board (call/put) from KIS FHPIF05030100."""
         await self._ensure_client()
         token = await self._get_token()
-        url = f"{settings.kis_base_url}/uapi/domestic-futureoption/v1/quotations/display-board-callput"
+        url = (
+            f"{settings.kis_base_url}/uapi/"
+            "domestic-futureoption/v1/quotations/display-board-callput"
+        )
         headers = self._make_headers(token, "FHPIF05030100")
         params = {
             "FID_COND_MRKT_DIV_CODE": "O",
@@ -278,18 +299,28 @@ class KISClient:
         resp.raise_for_status()
         data = resp.json()
         if data.get("rt_cd") != "0":
-            raise KISAPIError(f"Options board error: {data.get('msg1')} (product={product_code}, expiry={expiry_code})")
+            raise KISAPIError(
+                f"Options board error: {data.get('msg1')} "
+                f"(product={product_code}, expiry={expiry_code})"
+            )
         return data.get("output1", []), data.get("output2", [])
 
     async def get_options_investor(self, market_iscd: str, call_iscd2: str, put_iscd2: str) -> dict:
         """Fetch investor trading trend for call+put from KIS FHPTJ04030000."""
         await self._ensure_client()
         token = await self._get_token()
-        url = f"{settings.kis_base_url}/uapi/domestic-stock/v1/quotations/inquire-investor-time-by-market"
+        url = (
+            f"{settings.kis_base_url}/uapi/"
+            "domestic-stock/v1/quotations/inquire-investor-time-by-market"
+        )
         headers = self._make_headers(token, "FHPTJ04030000")
 
         async def _fetch(iscd2: str) -> dict:
-            r = await self._client.get(url, headers=headers, params={"fid_input_iscd": market_iscd, "fid_input_iscd_2": iscd2})  # type: ignore
+            r = await self._client.get(
+                url,
+                headers=headers,
+                params={"fid_input_iscd": market_iscd, "fid_input_iscd_2": iscd2},
+            )  # type: ignore
             r.raise_for_status()
             d = r.json()
             return (d.get("output") or [{}])[0]
@@ -325,7 +356,7 @@ def _parse_symbol_expiry(symbol: str) -> Optional[datetime]:
 
 def _second_thursday(year: int, month: int) -> datetime:
     """Return the 2nd Thursday of given year/month."""
-    from calendar import monthcalendar, THURSDAY
+    from calendar import THURSDAY, monthcalendar
     weeks = monthcalendar(year, month)
     thursdays = [week[THURSDAY] for week in weeks if week[THURSDAY] != 0]
     day = thursdays[1] if len(thursdays) >= 2 else thursdays[0]

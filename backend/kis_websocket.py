@@ -6,7 +6,6 @@ from enum import Enum
 from typing import Callable, Optional
 
 import websockets
-from websockets.exceptions import ConnectionClosed
 
 from backend.models import FuturesQuote
 
@@ -182,7 +181,7 @@ class KISWebSocketClient:
         if len(parts) < 4:
             return None
 
-        enc_flag = parts[0]
+        _ = parts[0]
         tr_id = parts[1]
         # data_count = parts[2]  # number of ticks (usually 1)
         fields = parts[3].split("^")  # data section is ^-delimited
@@ -319,6 +318,8 @@ class KISWebSocketClient:
                     "bids": bids,
                     "total_ask_qty": total_ask_qty,
                     "total_bid_qty": total_bid_qty,
+                    "ask_count": [_i(12 + i) for i in range(5)],
+                    "bid_count": [_i(17 + i) for i in range(5)],
                     "timestamp": fields[1] if len(fields) > 1 else "",
                 })
 
