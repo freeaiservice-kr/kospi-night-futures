@@ -6,6 +6,17 @@ let chart = null;
 let lineSeries = null;
 let lastPointTime = 0;  // track last added time to guard out-of-order points
 
+/**
+ * Convert UTC ISO string or Unix seconds to KST Unix seconds for lightweight-charts.
+ * lightweight-charts v4 is timezone-unaware — adding 9h (=9*3600s) shifts display to KST.
+ */
+function toKST(ts) {
+  const unixSec = typeof ts === 'string'
+    ? Math.floor(new Date(ts).getTime() / 1000)
+    : Math.floor(ts);
+  return unixSec + 9 * 3600;
+}
+
 export function initChart(containerId) {
   const container = document.getElementById(containerId);
   if (!container || !window.LightweightCharts) return;
@@ -54,7 +65,7 @@ export function initChart(containerId) {
 export function addChartPoint(timestamp, price) {
   if (!lineSeries) { console.warn('[chart] lineSeries not ready'); return; }
 
-  const time = Math.floor(new Date(timestamp).getTime() / 1000);
+  const time = toKST(timestamp);
   if (time < lastPointTime) { console.warn('[chart] out-of-order', time, lastPointTime); return; }
 
   try {
@@ -72,7 +83,7 @@ export function addChartPoint(timestamp, price) {
 export function loadChartHistory(ticks) {
   if (!lineSeries || !chart) return;
   const data = ticks
-    .map(t => ({ time: Math.floor(new Date(t.timestamp).getTime() / 1000), value: t.price }))
+    .map(t => ({ time: toKST(t.timestamp), value: t.price }))
     .filter(d => d.time > 0)
     .sort((a, b) => a.time - b.time);
   if (data.length === 0) return;

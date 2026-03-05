@@ -149,6 +149,10 @@ def _serialize_strike(row: dict) -> dict:
         "hts_ints_vltl": row.get("hts_ints_vltl", ""),
         "delta_val": row.get("delta_val", ""),
         "atm_cls_name": row.get("atm_cls_name", ""),
+        "gama": row.get("gama", ""),
+        "vega": row.get("vega", ""),
+        "theta": row.get("theta", ""),
+        "hts_otst_stpl_qty": row.get("hts_otst_stpl_qty", "0"),
     }
 
 

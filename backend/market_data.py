@@ -146,6 +146,7 @@ class MarketDataService:
             approval_key=approval_key,
             symbol=self._symbol,
             callback=self._on_tick,
+            orderbook_callback=self._on_orderbook,
         )
         await self._ws_client.start()
         logger.info("KIS WebSocket streaming started for symbol: %s", self._symbol)
@@ -187,6 +188,10 @@ class MarketDataService:
             self._last_trade_price = quote.price
         asyncio.create_task(self._broadcast_quote(quote))
 
+    def _on_orderbook(self, data: dict):
+        """Called when H0MFASP0 5-level orderbook frame arrives."""
+        asyncio.create_task(self._broadcast_raw(json.dumps(data)))
+
     async def _broadcast_quote(self, quote: FuturesQuote):
         """Broadcast FuturesQuote to all connected browser clients."""
         payload = json.dumps({
@@ -202,6 +207,10 @@ class MarketDataService:
                 "low_price": quote.low_price,
                 "timestamp": quote.timestamp.isoformat(),
                 "provider": quote.provider,
+                "cttr": quote.cttr,
+                "basis": quote.basis,
+                "open_interest": quote.open_interest,
+                "oi_change": quote.oi_change,
             },
         })
         await self._broadcast_raw(payload)

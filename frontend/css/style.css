@@ -471,3 +471,154 @@ body {
 .cell-chg {
   font-size: 0.75rem;
 }
+
+/* ===== DASHBOARD TABS (index.html unified page) ===== */
+.page-tab {
+  padding: 5px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.page-tab:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.page-tab--active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #0f1923;
+}
+
+/* ===== ORDERBOOK (5-level bid/ask) ===== */
+.orderbook-grid {
+  display: grid;
+  grid-template-columns: 1fr 90px 1fr;
+  gap: 2px;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.orderbook-grid__header {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 4px;
+}
+
+.orderbook-ask {
+  text-align: right;
+  padding: 3px 10px;
+  color: #ff8a80;
+  font-weight: 600;
+  background: rgba(255,23,68,0.04);
+  border-radius: 3px;
+}
+
+.orderbook-price {
+  text-align: center;
+  padding: 3px 4px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.04);
+  border-radius: 3px;
+}
+
+.orderbook-bid {
+  text-align: left;
+  padding: 3px 10px;
+  color: var(--color-accent);
+  font-weight: 600;
+  background: rgba(79,195,247,0.04);
+  border-radius: 3px;
+}
+
+.orderbook-total {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ===== INDICATOR BAR (CTTR, BASIS, OI) ===== */
+.indicator-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.indicator-item {
+  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+  padding: 8px 12px;
+  text-align: center;
+}
+
+.indicator-item__label {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+
+.indicator-item__value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.indicator-item__value--up { color: var(--color-up); }
+.indicator-item__value--down { color: var(--color-down); }
+.indicator-item__value--neutral { color: var(--text-primary); }
+
+/* ===== P/C RATIO PANEL ===== */
+.pc-panel {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 10px 0 6px;
+}
+
+.pc-panel__item {
+  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+  padding: 7px 14px;
+  min-width: 110px;
+}
+
+.pc-panel__label {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+
+.pc-panel__value {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.pc-ratio--bearish { color: var(--color-down); }
+.pc-ratio--bullish { color: var(--color-up); }
+.pc-ratio--neutral { color: var(--text-primary); }

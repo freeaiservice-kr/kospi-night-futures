@@ -9,6 +9,7 @@ function optionsApp() {
     _ws: null,
     _reconnectDelay: 1000,
     _reconnectTimer: null,
+    _pingTimer: null,
 
     // Market
     isMarketOpen: false,
@@ -71,6 +72,32 @@ function optionsApp() {
       return this.productLabels[this.activeProduct] || this.activeProduct;
     },
 
+    get pcRatio() {
+      const callVol = this.rawCalls.reduce((s, c) => s + parseInt(c.acml_vol || 0), 0);
+      const putVol = this.rawPuts.reduce((s, p) => s + parseInt(p.acml_vol || 0), 0);
+      if (callVol === 0) return '—';
+      return (putVol / callVol).toFixed(2);
+    },
+
+    get pcRatioClass() {
+      const callVol = this.rawCalls.reduce((s, c) => s + parseInt(c.acml_vol || 0), 0);
+      const putVol = this.rawPuts.reduce((s, p) => s + parseInt(p.acml_vol || 0), 0);
+      if (callVol === 0) return 'pc-ratio--neutral';
+      const r = putVol / callVol;
+      if (r > 1.5) return 'pc-ratio--bearish';
+      if (r < 0.7) return 'pc-ratio--bullish';
+      return 'pc-ratio--neutral';
+    },
+
+    get topVolumeStrike() {
+      let maxVol = 0, maxStrike = '—';
+      for (const { strike, call, put } of this.board) {
+        const vol = parseInt(call.acml_vol || 0) + parseInt(put.acml_vol || 0);
+        if (vol > maxVol) { maxVol = vol; maxStrike = strike; }
+      }
+      return maxStrike;
+    },
+
     get hasInvestorData() {
       return Object.keys(this.callInvestor).length > 0;
     },
@@ -128,6 +155,7 @@ function optionsApp() {
 
     _connect() {
       if (this._ws) { this._ws.onclose = null; this._ws.close(); }
+      clearInterval(this._pingTimer);
       this.connectionState = 'reconnecting';
       const ws = new WebSocket(this._wsUrl());
       this._ws = ws;
@@ -135,6 +163,11 @@ function optionsApp() {
       ws.onopen = () => {
         this.connectionState = 'connected';
         this._reconnectDelay = 1000;
+        this._pingTimer = setInterval(() => {
+          if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+            this._ws.send('ping');
+          }
+        }, 30000);
       };
 
       ws.onmessage = (event) => {
@@ -147,6 +180,7 @@ function optionsApp() {
       };
 
       ws.onclose = () => {
+        clearInterval(this._pingTimer);
         this.connectionState = 'reconnecting';
         this._scheduleReconnect();
       };

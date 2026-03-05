@@ -3,124 +3,418 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="KOSPI 200 야간선물 실시간 시세 서비스 - 한국투자증권 API 기반">
+  <meta name="description" content="KOSPI 200 야간선물·옵션 실시간 시세 서비스 - 한국투자증권 API 기반">
   <meta name="robots" content="index, follow">
-  <title>야선 - KOSPI 200 야간선물 실시간</title>
+  <title>야선 - KOSPI 200 야간선물·옵션 실시간</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" href="/assets/favicon.ico">
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
   <script type="module" src="/js/app.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
-<body x-data="futuresApp">
+<body x-data="dashboardApp">
 
   <header class="header">
-    <a href="/" class="header__title">야선 <span style="font-size:0.7em; color: var(--text-secondary);">야간선물</span></a>
-    <nav class="header__nav">
-      <a href="/options.html">옵션</a>
-      <a href="/about.html">서비스 소개</a>
-      <a href="/privacy.html">개인정보</a>
+    <a href="/" class="header__title">야선</a>
+    <nav class="header__nav" style="display:flex; align-items:center; gap:8px;">
+      <button class="page-tab"
+        :class="{ 'page-tab--active': activeTab === 'futures' }"
+        @click="activeTab = 'futures'">야간선물</button>
+      <button class="page-tab"
+        :class="{ 'page-tab--active': activeTab === 'options' }"
+        @click="activeTab = 'options'">옵션전광판</button>
     </nav>
   </header>
 
-  <main class="container">
+  <!-- ══════════════════════════════════════════════════════════════════════
+       야간선물 탭
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div x-show="activeTab === 'futures'">
+    <main class="container">
 
-    <!-- Connection & stale banner -->
-    <div x-show="isStale" class="stale-banner">
-      ⚠️ 데이터 지연 — 60초 이상 시세 업데이트가 없습니다
-    </div>
+      <!-- Stale banner -->
+      <div x-show="isStale" class="stale-banner" style="margin-top:16px;">
+        ⚠️ 데이터 지연 — 60초 이상 시세 업데이트가 없습니다
+      </div>
 
-    <div class="dashboard-grid" style="margin-top: 16px;">
+      <div style="margin-top:16px; display:grid; gap:var(--spacing);">
 
-      <!-- Left: Price card -->
-      <div class="card">
-        <div class="card__title">KOSPI 200 야간선물 현재가</div>
+        <!-- Row 1: price card + chart -->
+        <div style="display:grid; grid-template-columns:1fr 2fr; gap:var(--spacing);">
 
-        <!-- Session status -->
-        <div class="session-status"
-          :class="{
-            'session-status--night': sessionName === 'night',
-            'session-status--auction': sessionName === 'auction_pre' || sessionName === 'auction_close',
-            'session-status--closed': sessionName === 'closed' || sessionName === 'day'
-          }">
-          <span x-show="isMarketOpen" class="live-dot"></span>
-          <span x-text="sessionLabel"></span>
+          <!-- Price card -->
+          <div class="card">
+            <div class="card__title">KOSPI 200 야간선물 현재가</div>
+
+            <div class="session-status"
+              :class="{
+                'session-status--night': sessionName === 'night',
+                'session-status--auction': sessionName === 'auction_pre' || sessionName === 'auction_close',
+                'session-status--closed': sessionName === 'closed' || sessionName === 'day'
+              }">
+              <span x-show="isMarketOpen" class="live-dot"></span>
+              <span x-text="sessionLabel"></span>
+            </div>
+
+            <div class="price-main"
+              :class="{
+                'price-main--up': priceDirection === 'up',
+                'price-main--down': priceDirection === 'down',
+                'price-main--neutral': priceDirection === 'neutral'
+              }"
+              x-text="formattedPrice">
+            </div>
+
+            <div class="price-change">
+              <span :class="{ 'change--up': change > 0, 'change--down': change < 0, 'change--neutral': change === 0 }"
+                x-text="formattedChange"></span>
+              <span :class="{ 'change--up': changePct > 0, 'change--down': changePct < 0, 'change--neutral': changePct === 0 }"
+                x-text="formattedChangePct"></span>
+            </div>
+
+            <div class="stats-grid">
+              <div class="stat-item">
+                <div class="stat-item__label">거래량</div>
+                <div class="stat-item__value" x-text="formattedVolume"></div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-item__label">시가</div>
+                <div class="stat-item__value" x-text="formattedOpen"></div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-item__label">고가</div>
+                <div class="stat-item__value" style="color:var(--color-up)" x-text="formattedHigh"></div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-item__label">저가</div>
+                <div class="stat-item__value" style="color:var(--color-down)" x-text="formattedLow"></div>
+              </div>
+            </div>
+
+            <!-- Indicator bar: CTTR / BASIS / OI -->
+            <div class="indicator-bar" x-show="cttr !== null || openInterest !== null">
+              <div class="indicator-item">
+                <div class="indicator-item__label">체결강도</div>
+                <div class="indicator-item__value" :class="cttrClass"
+                  x-text="cttr !== null ? cttr.toFixed(1) + '%' : '—'"></div>
+              </div>
+              <div class="indicator-item">
+                <div class="indicator-item__label">베이시스</div>
+                <div class="indicator-item__value" :class="basisClass"
+                  x-text="basis !== null ? (basis >= 0 ? '+' : '') + basis.toFixed(2) : '—'"></div>
+              </div>
+              <div class="indicator-item">
+                <div class="indicator-item__label">미결제약정</div>
+                <div class="indicator-item__value"
+                  x-text="openInterest !== null ? openInterest.toLocaleString('ko-KR') : '—'"></div>
+              </div>
+              <div class="indicator-item">
+                <div class="indicator-item__label">OI 증감</div>
+                <div class="indicator-item__value"
+                  :class="oiChange > 0 ? 'indicator-item__value--up' : oiChange < 0 ? 'indicator-item__value--down' : 'indicator-item__value--neutral'"
+                  x-text="oiChange !== null ? (oiChange >= 0 ? '+' : '') + oiChange.toLocaleString('ko-KR') : '—'"></div>
+              </div>
+            </div>
+
+            <div style="margin-top:14px; display:flex; align-items:center; justify-content:space-between;">
+              <span class="status-badge"
+                :class="{
+                  'status-badge--connected': connectionState === 'connected',
+                  'status-badge--reconnecting': connectionState === 'reconnecting',
+                  'status-badge--stale': connectionState === 'stale',
+                  'status-badge--disconnected': connectionState === 'disconnected'
+                }"
+                x-text="connectionLabel">
+              </span>
+              <div class="symbol-info">
+                <span x-text="symbol" style="font-weight:600;"></span>
+                <span x-text="lastTimestamp ? new Date(lastTimestamp).toLocaleTimeString('ko-KR') : ''"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chart card -->
+          <div class="card">
+            <div class="card__title">일중 가격 차트 (KST)</div>
+            <div class="chart-container" id="chart"></div>
+          </div>
         </div>
 
-        <!-- Main price -->
-        <div class="price-main"
-          :class="{
-            'price-main--up': priceDirection === 'up',
-            'price-main--down': priceDirection === 'down',
-            'price-main--neutral': priceDirection === 'neutral'
-          }"
-          x-text="formattedPrice">
+        <!-- Row 2: orderbook -->
+        <div class="card" x-show="bids.length > 0 || asks.length > 0">
+          <div class="card__title" style="display:flex; align-items:center; justify-content:space-between;">
+            <span>5단 호가창</span>
+            <span x-show="totalAskQty > 0 || totalBidQty > 0" style="font-size:0.72rem; color:var(--text-secondary);">
+              총매도 <strong style="color:#ff8a80;" x-text="totalAskQty.toLocaleString('ko-KR')"></strong>
+              &nbsp;/&nbsp;
+              총매수 <strong style="color:var(--color-accent);" x-text="totalBidQty.toLocaleString('ko-KR')"></strong>
+            </span>
+          </div>
+          <div class="orderbook-grid">
+            <!-- Header -->
+            <div class="orderbook-grid__header" style="color:#ff8a80;">매도 잔량</div>
+            <div class="orderbook-grid__header">가격</div>
+            <div class="orderbook-grid__header" style="color:var(--color-accent);">매수 잔량</div>
+            <!-- Ask rows (5 levels, sorted: highest ask first) -->
+            <template x-for="(row, i) in asks.slice().reverse()" :key="'a'+i">
+              <template x-if="true">
+                <div style="display:contents;">
+                  <div class="orderbook-ask" x-text="row.qty.toLocaleString('ko-KR')"></div>
+                  <div class="orderbook-price" x-text="row.price.toFixed(2)"></div>
+                  <div></div>
+                </div>
+              </template>
+            </template>
+            <!-- Bid rows (5 levels, highest bid first) -->
+            <template x-for="(row, i) in bids" :key="'b'+i">
+              <template x-if="true">
+                <div style="display:contents;">
+                  <div></div>
+                  <div class="orderbook-price" x-text="row.price.toFixed(2)"></div>
+                  <div class="orderbook-bid" x-text="row.qty.toLocaleString('ko-KR')"></div>
+                </div>
+              </template>
+            </template>
+          </div>
         </div>
 
-        <!-- Change -->
-        <div class="price-change">
-          <span :class="{ 'change--up': change > 0, 'change--down': change < 0, 'change--neutral': change === 0 }"
-            x-text="formattedChange"></span>
-          <span :class="{ 'change--up': changePct > 0, 'change--down': changePct < 0, 'change--neutral': changePct === 0 }"
-            x-text="formattedChangePct"></span>
+      </div>
+
+      <p style="margin-top:16px; font-size:0.75rem; color:var(--text-secondary); text-align:center;">
+        본 서비스는 정보 제공 목적으로만 제공됩니다. 투자 권유가 아닙니다.
+      </p>
+    </main>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       옵션전광판 탭
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div x-show="activeTab === 'options'">
+    <main class="container">
+
+      <!-- Controls row -->
+      <div class="options-controls" style="margin-top:16px;">
+        <div class="product-tabs">
+          <template x-for="(label, key) in productLabels" :key="key">
+            <button class="product-tab"
+              :class="{ 'product-tab--active': activeProduct === key }"
+              @click="setProduct(key)"
+              x-text="label">
+            </button>
+          </template>
         </div>
 
-        <!-- Stats -->
-        <div class="stats-grid">
-          <div class="stat-item">
-            <div class="stat-item__label">거래량</div>
-            <div class="stat-item__value" x-text="formattedVolume"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-item__label">시가</div>
-            <div class="stat-item__value" x-text="formattedOpen"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-item__label">고가</div>
-            <div class="stat-item__value" style="color: var(--color-up)" x-text="formattedHigh"></div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-item__label">저가</div>
-            <div class="stat-item__value" style="color: var(--color-down)" x-text="formattedLow"></div>
-          </div>
-        </div>
-
-        <!-- Connection status & symbol -->
-        <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between;">
+        <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
           <span class="status-badge"
             :class="{
-              'status-badge--connected': connectionState === 'connected',
-              'status-badge--reconnecting': connectionState === 'reconnecting',
-              'status-badge--stale': connectionState === 'stale',
-              'status-badge--disconnected': connectionState === 'disconnected'
+              'status-badge--connected': optConnectionState === 'connected',
+              'status-badge--reconnecting': optConnectionState === 'reconnecting',
+              'status-badge--disconnected': optConnectionState === 'disconnected'
             }"
-            x-text="connectionLabel">
+            x-text="optConnectionState === 'connected' ? '연결됨' : optConnectionState === 'reconnecting' ? '연결 중...' : '연결 끊김'">
           </span>
-          <div class="symbol-info">
-            <span x-text="symbol" style="font-weight: 600;"></span>
-            <span x-text="lastTimestamp ? new Date(lastTimestamp).toLocaleTimeString('ko-KR') : ''"></span>
+          <span x-show="optIsMarketOpen" class="session-status session-status--night" style="margin-bottom:0;">
+            <span class="live-dot"></span>장중
+          </span>
+          <span x-show="!optIsMarketOpen" class="session-status session-status--closed" style="margin-bottom:0;">
+            장외
+          </span>
+          <span style="font-size:0.78rem; color:var(--text-secondary);">
+            만기: <strong x-text="expiryDisplay"></strong>
+          </span>
+        </div>
+      </div>
+
+      <!-- KOSPI200 기초자산 가격바 -->
+      <div x-show="futuresPrice !== null" style="margin-top:12px; background:var(--bg-card); border-radius:var(--border-radius); border:1px solid rgba(255,255,255,0.06); padding:12px 16px; display:flex; align-items:center; flex-wrap:wrap; gap:16px;">
+        <span style="font-size:0.72rem; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-secondary);">KOSPI200 기초자산</span>
+        <span style="font-size:1.6rem; font-weight:800; letter-spacing:-0.01em;" :class="futuresChangeClass" x-text="futuresPriceFormatted"></span>
+        <span style="font-size:1rem; font-weight:600;" :class="futuresChangeClass">
+          <span x-text="futuresChangeFormatted"></span>
+          <span style="font-size:0.85rem; margin-left:4px;" x-text="futuresChangePctFormatted"></span>
+        </span>
+        <div style="display:flex; gap:16px; font-size:0.78rem; color:var(--text-secondary); margin-left:auto;">
+          <span>고 <strong style="color:var(--color-up);" x-text="futuresHigh?.toFixed(2) ?? '—'"></strong></span>
+          <span>저 <strong style="color:var(--color-down);" x-text="futuresLow?.toFixed(2) ?? '—'"></strong></span>
+          <span>시 <strong x-text="futuresOpen?.toFixed(2) ?? '—'"></strong></span>
+          <span style="color:var(--text-secondary); font-size:0.72rem;" x-text="futuresSymbol"></span>
+        </div>
+      </div>
+
+      <!-- P/C Ratio + 최대거래량 행사가 -->
+      <div class="card" style="margin-top:12px;">
+        <div class="card__title" style="display:flex; align-items:center; justify-content:space-between;">
+          <span>옵션 지표</span>
+          <span x-show="!optIsMarketOpen" style="font-size:0.72rem; color:var(--text-secondary);">장외 시간 (08:45~15:45)</span>
+        </div>
+        <div class="pc-panel">
+          <div class="pc-panel__item">
+            <div class="pc-panel__label">P/C Ratio</div>
+            <div class="pc-panel__value" :class="pcRatioClass" x-text="pcRatio"></div>
+          </div>
+          <div class="pc-panel__item">
+            <div class="pc-panel__label">최대거래량 행사가</div>
+            <div class="pc-panel__value" x-text="topVolumeStrike"></div>
           </div>
         </div>
       </div>
 
-      <!-- Right: Chart card -->
-      <div class="card">
-        <div class="card__title">일중 가격 차트</div>
-        <div class="chart-container" id="chart"></div>
+      <!-- 투자자별 매매동향 -->
+      <div class="card" style="margin-top:12px;" x-show="hasInvestorData">
+        <div class="card__title">투자자별 매매동향 (순매수 계약수)</div>
+        <div class="investor-flow-grid">
+          <div class="investor-flow-header"></div>
+          <div class="investor-flow-header">콜 순매수</div>
+          <div class="investor-flow-header">풋 순매수</div>
+          <div class="investor-flow-label">외국인</div>
+          <div class="investor-flow-cell" :class="flowClass(callInvestor.frgn_ntby)" x-text="fmtFlow(callInvestor.frgn_ntby)"></div>
+          <div class="investor-flow-cell" :class="flowClass(putInvestor.frgn_ntby)" x-text="fmtFlow(putInvestor.frgn_ntby)"></div>
+          <div class="investor-flow-label">개인</div>
+          <div class="investor-flow-cell" :class="flowClass(callInvestor.prsn_ntby)" x-text="fmtFlow(callInvestor.prsn_ntby)"></div>
+          <div class="investor-flow-cell" :class="flowClass(putInvestor.prsn_ntby)" x-text="fmtFlow(putInvestor.prsn_ntby)"></div>
+          <div class="investor-flow-label">기관계</div>
+          <div class="investor-flow-cell" :class="flowClass(callInvestor.orgn_ntby)" x-text="fmtFlow(callInvestor.orgn_ntby)"></div>
+          <div class="investor-flow-cell" :class="flowClass(putInvestor.orgn_ntby)" x-text="fmtFlow(putInvestor.orgn_ntby)"></div>
+        </div>
       </div>
 
-    </div>
+      <!-- KOSPI200 가격 추이 -->
+      <div class="card" style="margin-top:12px;" x-show="futuresHistory.length > 0">
+        <div class="card__title" style="display:flex; align-items:center; justify-content:space-between;">
+          <span>KOSPI200 기초자산 가격 추이</span>
+          <span style="font-size:0.72rem; color:var(--text-secondary); font-weight:400;">최근 <span x-text="futuresHistory.length"></span>건 · 30초 간격</span>
+        </div>
+        <div style="overflow-x:auto; max-height:260px; overflow-y:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:0.78rem; white-space:nowrap;">
+            <thead style="position:sticky; top:0; background:var(--bg-card); z-index:1;">
+              <tr style="color:var(--text-secondary); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.08);">
+                <th style="padding:4px 8px; text-align:left;">시각</th>
+                <th style="padding:4px 8px; text-align:right;">가격</th>
+                <th style="padding:4px 8px; text-align:right;">전일대비</th>
+                <th style="padding:4px 8px; text-align:right;">등락률</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="row in futuresHistory" :key="row.ts">
+                <tr style="border-top:1px solid rgba(255,255,255,0.03);">
+                  <td style="padding:4px 8px; color:var(--text-secondary); font-size:0.72rem;" x-text="row.time"></td>
+                  <td style="padding:4px 8px; text-align:right; font-weight:600;" x-text="row.price?.toFixed(2) ?? '—'"></td>
+                  <td style="padding:4px 8px; text-align:right;" :class="row.change >= 0 ? 'flow-positive' : 'flow-negative'"
+                      x-text="row.change != null ? (row.change >= 0 ? '+' : '') + row.change.toFixed(2) : '—'"></td>
+                  <td style="padding:4px 8px; text-align:right; font-size:0.72rem;" :class="row.change_pct >= 0 ? 'flow-positive' : 'flow-negative'"
+                      x-text="row.change_pct != null ? (row.change_pct >= 0 ? '+' : '') + row.change_pct.toFixed(2) + '%' : '—'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-    <!-- Disclaimer -->
-    <p style="margin-top: 16px; font-size: 0.75rem; color: var(--text-secondary); text-align: center;">
-      본 서비스는 정보 제공 목적으로만 제공됩니다. 투자 권유가 아닙니다.
-    </p>
+      <!-- 투자자별 매매동향 추이 -->
+      <div class="card" style="margin-top:12px;" x-show="investorHistory.length > 0">
+        <div class="card__title" style="display:flex; align-items:center; justify-content:space-between;">
+          <span>투자자별 매매동향 추이 (순매수 계약수)</span>
+          <span style="font-size:0.72rem; color:var(--text-secondary); font-weight:400;">최근 <span x-text="investorHistory.length"></span>건 · 30초 간격</span>
+        </div>
+        <div style="overflow-x:auto; max-height:260px; overflow-y:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:0.78rem; white-space:nowrap;">
+            <thead style="position:sticky; top:0; background:var(--bg-card); z-index:1;">
+              <tr style="color:var(--text-secondary); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.08);">
+                <th style="padding:4px 8px; text-align:left;">시각</th>
+                <th style="padding:4px 8px; text-align:right;" colspan="2">외국인</th>
+                <th style="padding:4px 8px; text-align:right;" colspan="2">개인</th>
+                <th style="padding:4px 8px; text-align:right;" colspan="2">기관계</th>
+              </tr>
+              <tr style="color:var(--text-secondary); font-size:0.65rem; border-bottom:1px solid rgba(255,255,255,0.06); background:var(--bg-card);">
+                <th style="padding:2px 8px;"></th>
+                <th style="padding:2px 6px; text-align:right; color:var(--color-accent);">콜</th>
+                <th style="padding:2px 6px; text-align:right; color:#ff8a80;">풋</th>
+                <th style="padding:2px 6px; text-align:right; color:var(--color-accent);">콜</th>
+                <th style="padding:2px 6px; text-align:right; color:#ff8a80;">풋</th>
+                <th style="padding:2px 6px; text-align:right; color:var(--color-accent);">콜</th>
+                <th style="padding:2px 6px; text-align:right; color:#ff8a80;">풋</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(row, i) in investorHistory" :key="row.ts">
+                <tr style="border-top:1px solid rgba(255,255,255,0.03);">
+                  <td style="padding:4px 8px; color:var(--text-secondary); font-size:0.72rem;" x-text="row.time"></td>
+                  <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.call_frgn)" x-text="fmtFlow(row.call_frgn)"></td>
+                  <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.put_frgn)" x-text="fmtFlow(row.put_frgn)"></td>
+                  <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.call_prsn)" x-text="fmtFlow(row.call_prsn)"></td>
+                  <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.put_prsn)" x-text="fmtFlow(row.put_prsn)"></td>
+                  <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.call_orgn)" x-text="fmtFlow(row.call_orgn)"></td>
+                  <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.put_orgn)" x-text="fmtFlow(row.put_orgn)"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-  </main>
+      <!-- 옵션 전광판 -->
+      <div class="card" style="margin-top:12px;">
+        <div class="card__title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span>옵션 전광판 — <span x-text="activeProductLabel"></span></span>
+            <span style="font-size:0.85rem; font-weight:600; color:var(--color-warning);" x-text="expiryDisplay !== '—' ? '만기 ' + expiryDisplay : ''"></span>
+          </div>
+          <span x-show="lastUpdated" style="font-size:0.72rem; color:var(--text-secondary); font-weight:400;">
+            업데이트 <span x-text="lastUpdated"></span> KST
+          </span>
+        </div>
+
+        <div class="options-board-header" style="border-bottom:none; padding-bottom:2px;">
+          <div style="text-align:center; font-weight:700; font-size:0.8rem; color:var(--color-accent); background:rgba(79,195,247,0.08); border-radius:4px 4px 0 0; padding:3px 0;">콜 (Call)</div>
+          <div></div>
+          <div style="text-align:center; font-weight:700; font-size:0.8rem; color:#ff8a80; background:rgba(255,23,68,0.08); border-radius:4px 4px 0 0; padding:3px 0;">풋 (Put)</div>
+        </div>
+        <div class="options-board-header">
+          <div class="call-header">
+            <span>거래량</span><span>IV</span><span>델타</span><span>전일대비</span><span>현재가</span>
+          </div>
+          <div class="strike-header">행사가</div>
+          <div class="put-header">
+            <span>현재가</span><span>전일대비</span><span>델타</span><span>IV</span><span>거래량</span>
+          </div>
+        </div>
+
+        <div class="options-board-body">
+          <div x-show="board.length === 0" style="text-align:center; padding:32px; color:var(--text-secondary);">
+            <span x-show="!optIsMarketOpen">장외 시간입니다 (08:45~15:45)</span>
+            <span x-show="optIsMarketOpen">데이터 로딩 중...</span>
+          </div>
+          <template x-for="row in board" :key="row.strike">
+            <div class="strike-row" :class="{ 'strike-row--atm': row.call.atm_cls_name === 'ATM' || row.put.atm_cls_name === 'ATM' }">
+              <div class="call-side">
+                <span class="cell-vol" x-text="fmtVol(row.call.acml_vol)"></span>
+                <span class="cell-iv" x-text="fmtIv(row.call.hts_ints_vltl)"></span>
+                <span class="cell-delta" x-text="row.call.delta_val || '—'"></span>
+                <span class="cell-chg" :class="changeClass(row.call.prdy_vrss_sign)" x-text="fmtChg(row.call.optn_prdy_vrss, row.call.prdy_vrss_sign)"></span>
+                <span class="cell-price call-price" x-text="row.call.optn_prpr || '—'"></span>
+              </div>
+              <div class="strike-center" x-text="row.strike"></div>
+              <div class="put-side">
+                <span class="cell-price put-price" x-text="row.put.optn_prpr || '—'"></span>
+                <span class="cell-chg" :class="changeClass(row.put.prdy_vrss_sign)" x-text="fmtChg(row.put.optn_prdy_vrss, row.put.prdy_vrss_sign)"></span>
+                <span class="cell-delta" x-text="row.put.delta_val || '—'"></span>
+                <span class="cell-iv" x-text="fmtIv(row.put.hts_ints_vltl)"></span>
+                <span class="cell-vol" x-text="fmtVol(row.put.acml_vol)"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <p style="margin-top:16px; font-size:0.75rem; color:var(--text-secondary); text-align:center;">
+        본 서비스는 정보 제공 목적으로만 제공됩니다. 투자 권유가 아닙니다.
+      </p>
+    </main>
+  </div>
 
   <footer class="footer">
     <p>야선.com &copy; 2026 &nbsp;|&nbsp; <a href="/about.html">서비스 소개</a> &nbsp;|&nbsp; <a href="/privacy.html">개인정보처리방침</a></p>
-    <p style="margin-top: 6px;">본 서비스는 투자 권유가 아닙니다. 투자는 본인 판단과 책임 하에 하시기 바랍니다.</p>
+    <p style="margin-top:6px;">본 서비스는 투자 권유가 아닙니다. 투자는 본인 판단과 책임 하에 하시기 바랍니다.</p>
   </footer>
 
 </body>

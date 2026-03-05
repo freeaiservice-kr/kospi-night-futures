@@ -27,11 +27,19 @@ class KISWebSocketClient:
     TR_ID = "H0MFCNT0"     # 야간선물 실시간 체결 (KRX night futures real-time ccnl)
     ASK_TR_ID = "H0MFASP0"  # 야간선물 실시간 호가 (order book, 0.2s filter)
 
-    def __init__(self, ws_url: str, approval_key: str, symbol: str, callback: Callable[[FuturesQuote], None]):
+    def __init__(
+        self,
+        ws_url: str,
+        approval_key: str,
+        symbol: str,
+        callback: Callable[[FuturesQuote], None],
+        orderbook_callback: Optional[Callable] = None,
+    ):
         self._ws_url = ws_url
         self._approval_key = approval_key
         self._symbol = symbol
         self._callback = callback
+        self._orderbook_callback = orderbook_callback
         self._state = ConnectionState.DISCONNECTED
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
@@ -220,6 +228,13 @@ class KISWebSocketClient:
             low_price = _f(8)                # futs_lwpr
             volume = _i(10)                  # acml_vol (cumulative)
 
+            # Additional indicators (indices 11+ — safe length guards)
+            # [12] cttr 체결강도, [18] mrkt_basis, [19] hts_otst_stpl_qty, [20] otst_stpl_qty_icdc
+            cttr = _f(12) if len(fields) > 12 else 0.0
+            basis = _f(18) if len(fields) > 18 else 0.0
+            open_interest = _i(19) if len(fields) > 19 else 0
+            oi_change = _i(20) if len(fields) > 20 else 0
+
             # Apply sign: 4=하한, 5=하락 → negative
             if change_sign in ("4", "5"):
                 change = -abs(change)
@@ -247,6 +262,10 @@ class KISWebSocketClient:
                 low_price=low_price,
                 timestamp=ts,
                 provider="kis",
+                cttr=cttr,
+                basis=basis,
+                open_interest=open_interest,
+                oi_change=oi_change,
             )
             self._last_trade = quote  # cache for orderbook-based quotes
             return quote
@@ -256,30 +275,52 @@ class KISWebSocketClient:
 
     def _parse_orderbook_frame(self, fields: list[str]) -> Optional[FuturesQuote]:
         """
-        Parse H0MFASP0 (야간선물 실시간 호가) frame.
-        H0MFASP0 field layout (from KRX야간선물 실시간호가 [실시간-065].xlsx):
-          [0]  FUTS_SHRN_ISCD  선물 단축 종목코드
-          [1]  BSOP_HOUR       영업 시간 HHMMSS
-          [2]  FUTS_ASKP1      매도호가1 (best ask)
-          [3]  FUTS_ASKP2
-          [4]  FUTS_ASKP3
-          [5]  FUTS_ASKP4
-          [6]  FUTS_ASKP5
-          [7]  FUTS_BIDP1      매수호가1 (best bid)
-          ...
-        Uses best bid as price proxy; inherits change/volume from last trade tick.
+        Parse H0MFASP0 (야간선물 실시간 호가) — 5-level order book.
+        H0MFASP0 field layout ([실시간-065].xlsx):
+          [0]       FUTS_SHRN_ISCD  종목코드
+          [1]       BSOP_HOUR       영업시간 HHMMSS
+          [2]-[6]   FUTS_ASKP1~5    매도호가1~5
+          [7]-[11]  FUTS_BIDP1~5    매수호가1~5
+          [12]-[16] ASKP_CSNU1~5    매도호가건수1~5
+          [17]-[21] BIDP_CSNU1~5    매수호가건수1~5
+          [22]-[26] ASKP_RSQN1~5    매도호가잔량1~5
+          [27]-[31] BIDP_RSQN1~5    매수호가잔량1~5
+          [32]      TOTAL_ASKP_CSNU 총매도건수
+          [33]      TOTAL_BIDP_CSNU 총매수건수
+          [34]      TOTAL_ASKP_RSQN 총매도잔량
+          [35]      TOTAL_BIDP_RSQN 총매수잔량
         """
         if len(fields) < 8:
             return None
         try:
             def _f(idx: int) -> float:
-                return float(fields[idx]) if fields[idx] else 0.0
+                return float(fields[idx]) if idx < len(fields) and fields[idx] else 0.0
+
+            def _i(idx: int) -> int:
+                return int(fields[idx]) if idx < len(fields) and fields[idx] else 0
 
             ask1 = _f(2)
             bid1 = _f(7)
 
             if bid1 == 0.0 and ask1 == 0.0:
                 return None
+
+            # Build 5-level depth lists (filter zeros)
+            asks = [{"price": _f(2 + i), "qty": _i(22 + i)} for i in range(5) if _f(2 + i) > 0]
+            bids = [{"price": _f(7 + i), "qty": _i(27 + i)} for i in range(5) if _f(7 + i) > 0]
+            total_ask_qty = _i(34)
+            total_bid_qty = _i(35)
+
+            # Broadcast structured orderbook to browser clients
+            if self._orderbook_callback and (asks or bids):
+                self._orderbook_callback({
+                    "type": "orderbook",
+                    "asks": asks,
+                    "bids": bids,
+                    "total_ask_qty": total_ask_qty,
+                    "total_bid_qty": total_bid_qty,
+                    "timestamp": fields[1] if len(fields) > 1 else "",
+                })
 
             # Use mid-price; fall back to whichever side is non-zero
             if bid1 > 0 and ask1 > 0:

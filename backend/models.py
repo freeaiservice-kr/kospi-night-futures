@@ -13,6 +13,10 @@ class FuturesQuote(BaseModel):
     low_price: float          # 저가
     timestamp: datetime       # 체결시각
     provider: str             # "kis"
+    cttr: float = 0.0         # 체결강도 (%)
+    basis: float = 0.0        # 시장 베이시스
+    open_interest: int = 0    # 미결제약정 수량
+    oi_change: int = 0        # 미결제약정 증감
 
 
 class MarketStatus(BaseModel):

@@ -221,6 +221,18 @@
         </span>
       </div>
 
+      <!-- P/C Ratio bar -->
+      <div class="pc-panel" x-show="rawCalls.length > 0 || rawPuts.length > 0">
+        <div class="pc-panel__item">
+          <span class="pc-panel__label">P/C 비율</span>
+          <span class="pc-panel__value" :class="pcRatioClass" x-text="pcRatio"></span>
+        </div>
+        <div class="pc-panel__item">
+          <span class="pc-panel__label">최대거래량 행사가</span>
+          <span class="pc-panel__value" x-text="topVolumeStrike"></span>
+        </div>
+      </div>
+
       <!-- Call/Put side labels -->
       <div class="options-board-header" style="border-bottom: none; padding-bottom: 2px;">
         <div style="text-align:center; font-weight:700; font-size:0.8rem; color:var(--color-accent); background:rgba(79,195,247,0.08); border-radius:4px 4px 0 0; padding:3px 0;">콜 (Call)</div>
