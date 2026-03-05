@@ -66,6 +66,14 @@ async def get_options_status():
     }
 
 
+@router.get("/api/v1/options/investor-history")
+async def get_investor_history(request: Request, product: str = "WKI", limit: int = 60):
+    """Get investor flow history for intraday trend display."""
+    options_data = request.app.state.options_data
+    rows = await options_data.investor_store.get_history(product, limit=limit)
+    return {"product": product, "rows": rows}
+
+
 @router.websocket("/ws/options")
 async def ws_options(websocket: WebSocket, product: str = "WKI"):
     """WebSocket endpoint: real-time options stream to browsers."""

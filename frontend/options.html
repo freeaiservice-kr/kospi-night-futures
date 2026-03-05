@@ -96,6 +96,48 @@
       </div>
     </div>
 
+    <!-- Investor flow history trend -->
+    <div class="card" style="margin-top: 12px;" x-show="investorHistory.length > 0">
+      <div class="card__title" style="display:flex; align-items:center; justify-content:space-between;">
+        <span>투자자별 매매동향 추이 (순매수 계약수)</span>
+        <span style="font-size:0.72rem; color:var(--text-secondary); font-weight:400;">최근 <span x-text="investorHistory.length"></span>건 · 30초 간격</span>
+      </div>
+      <div style="overflow-x: auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.78rem; white-space:nowrap;">
+          <thead>
+            <tr style="color:var(--text-secondary); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.08);">
+              <th style="padding:4px 8px; text-align:left;">시각</th>
+              <th style="padding:4px 8px; text-align:right;" colspan="2">외국인</th>
+              <th style="padding:4px 8px; text-align:right;" colspan="2">개인</th>
+              <th style="padding:4px 8px; text-align:right;" colspan="2">기관계</th>
+            </tr>
+            <tr style="color:var(--text-secondary); font-size:0.65rem; border-bottom:1px solid rgba(255,255,255,0.06);">
+              <th style="padding:2px 8px;"></th>
+              <th style="padding:2px 6px; text-align:right; color:var(--color-accent);">콜</th>
+              <th style="padding:2px 6px; text-align:right; color:#ff8a80;">풋</th>
+              <th style="padding:2px 6px; text-align:right; color:var(--color-accent);">콜</th>
+              <th style="padding:2px 6px; text-align:right; color:#ff8a80;">풋</th>
+              <th style="padding:2px 6px; text-align:right; color:var(--color-accent);">콜</th>
+              <th style="padding:2px 6px; text-align:right; color:#ff8a80;">풋</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(row, i) in investorHistory" :key="row.ts">
+              <tr style="border-top:1px solid rgba(255,255,255,0.03);">
+                <td style="padding:4px 8px; color:var(--text-secondary); font-size:0.72rem;" x-text="row.time"></td>
+                <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.call_frgn)" x-text="fmtFlow(row.call_frgn)"></td>
+                <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.put_frgn)" x-text="fmtFlow(row.put_frgn)"></td>
+                <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.call_prsn)" x-text="fmtFlow(row.call_prsn)"></td>
+                <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.put_prsn)" x-text="fmtFlow(row.put_prsn)"></td>
+                <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.call_orgn)" x-text="fmtFlow(row.call_orgn)"></td>
+                <td style="padding:4px 6px; text-align:right;" :class="flowClass(row.put_orgn)" x-text="fmtFlow(row.put_orgn)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Active options (top by volume) -->
     <div class="card" style="margin-top: 12px;" x-show="activeOptions.length > 0">
       <div class="card__title">체결 활성 상위 (거래량순)</div>

@@ -28,12 +28,42 @@ function optionsApp() {
     rawPuts: [],
     expiryDisplay: '—',
     expiryCode: '—',
+    lastUpdated: null,
+
+    // KOSPI200 futures price
+    futuresPrice: null,
+    futuresChange: null,
+    futuresChangePct: null,
+    futuresSymbol: '—',
+    futuresHigh: null,
+    futuresLow: null,
+    futuresOpen: null,
 
     // Investor data
     callInvestor: {},
     putInvestor: {},
+    investorHistory: [],
 
     // Computed
+    get futuresPriceFormatted() {
+      if (this.futuresPrice === null) return '—';
+      return this.futuresPrice.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    },
+    get futuresChangeFormatted() {
+      if (this.futuresChange === null) return '—';
+      const sign = this.futuresChange >= 0 ? '+' : '';
+      return `${sign}${this.futuresChange.toFixed(2)}`;
+    },
+    get futuresChangePctFormatted() {
+      if (this.futuresChangePct === null) return '';
+      const sign = this.futuresChangePct >= 0 ? '+' : '';
+      return `(${sign}${this.futuresChangePct.toFixed(2)}%)`;
+    },
+    get futuresChangeClass() {
+      if (this.futuresChange === null) return 'change--neutral';
+      return this.futuresChange > 0 ? 'change--up' : this.futuresChange < 0 ? 'change--down' : 'change--neutral';
+    },
+
     get activeProductLabel() {
       return this.productLabels[this.activeProduct] || this.activeProduct;
     },
@@ -68,9 +98,23 @@ function optionsApp() {
       return rows;
     },
 
+    get activeOptions() {
+      const list = [];
+      for (const c of this.rawCalls) {
+        const vol = parseInt(c.acml_vol || '0');
+        if (vol > 0) list.push({ kind: '콜', kindClass: 'call-price', ...c, _vol: vol });
+      }
+      for (const p of this.rawPuts) {
+        const vol = parseInt(p.acml_vol || '0');
+        if (vol > 0) list.push({ kind: '풋', kindClass: 'put-price', ...p, _vol: vol });
+      }
+      return list.sort((a, b) => b._vol - a._vol).slice(0, 15);
+    },
+
     init() {
       this._connect();
       this._pollStatus();
+      this._loadInvestorHistory();
     },
 
     _wsUrl() {
@@ -121,9 +165,34 @@ function optionsApp() {
         } else {
           this.expiryDisplay = msg.expiry || '—';
         }
+        if (msg.updated_at) this.lastUpdated = msg.updated_at;
       } else if (msg.type === 'investor_flow') {
         this.callInvestor = msg.call_investor || {};
         this.putInvestor = msg.put_investor || {};
+        // Prepend live snapshot to history (keep 60 rows)
+        const ci = this.callInvestor, pi = this.putInvestor;
+        const now = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        const row = {
+          ts: Date.now(),
+          time: timeStr,
+          call_frgn: parseInt(ci.frgn_ntby || 0),
+          call_prsn: parseInt(ci.prsn_ntby || 0),
+          call_orgn: parseInt(ci.orgn_ntby || 0),
+          put_frgn: parseInt(pi.frgn_ntby || 0),
+          put_prsn: parseInt(pi.prsn_ntby || 0),
+          put_orgn: parseInt(pi.orgn_ntby || 0),
+        };
+        this.investorHistory = [row, ...this.investorHistory].slice(0, 60);
+      } else if (msg.type === 'futures_price') {
+        this.futuresPrice = msg.price;
+        this.futuresChange = msg.change;
+        this.futuresChangePct = msg.change_pct;
+        this.futuresSymbol = msg.symbol || '—';
+        this.futuresHigh = msg.high;
+        this.futuresLow = msg.low;
+        this.futuresOpen = msg.open;
       } else if (msg.type === 'options_status') {
         this.isMarketOpen = msg.is_open;
       } else if (msg.type === 'pong') {
@@ -158,10 +227,22 @@ function optionsApp() {
       this.rawPuts = [];
       this.callInvestor = {};
       this.putInvestor = {};
+      this.investorHistory = [];
       this.expiryDisplay = '—';
-      // Reconnect so backend sends fresh data for new product
-      // (For now we just reconnect; backend uses its _active_product)
-      // Future: send product selection over WS
+      this._connect();
+      this._loadInvestorHistory();
+    },
+
+    async _loadInvestorHistory() {
+      try {
+        const resp = await fetch(`/api/v1/options/investor-history?product=${this.activeProduct}&limit=60`);
+        if (resp.ok) {
+          const data = await resp.json();
+          this.investorHistory = data.rows || [];
+        }
+      } catch (e) {
+        console.warn('Investor history load error:', e);
+      }
     },
 
     // Formatters

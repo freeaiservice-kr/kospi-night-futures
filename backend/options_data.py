@@ -9,18 +9,20 @@ import asyncio
 import json
 import logging
 from calendar import monthcalendar, THURSDAY
-from datetime import date as _date
+from datetime import date as _date, datetime
 from typing import Optional
 
 from fastapi import WebSocket
 from backend.config import settings
 from backend.kis_client import KISClient, KISAuthError
 from backend.market_status import get_options_market_status
+from backend.investor_store import InvestorStore
 
 logger = logging.getLogger(__name__)
 
 BOARD_POLL_INTERVAL = 5   # seconds
 INVESTOR_POLL_INTERVAL = 30  # seconds
+FUTURES_POLL_INTERVAL = 2  # seconds — KOSPI200 futures price
 
 # Product config: (display_name, market_iscd, call_iscd2, put_iscd2, board_product_code)
 PRODUCTS = {
@@ -32,6 +34,20 @@ PRODUCTS = {
 }
 
 _KO_WEEKDAY = ["월", "화", "수", "목", "금", "토", "일"]
+
+
+def _compute_kospi200_futures_symbol(ref_date: Optional[_date] = None) -> str:
+    """Compute front-month KOSPI200 daytime futures short code (101V{Y}{MM})."""
+    if ref_date is None:
+        ref_date = _date.today()
+    for month in (3, 6, 9, 12):
+        weeks = monthcalendar(ref_date.year, month)
+        thursdays = [w[THURSDAY] for w in weeks if w[THURSDAY] != 0]
+        exp_day = thursdays[1] if len(thursdays) >= 2 else thursdays[0]
+        exp_date = _date(ref_date.year, month, exp_day)
+        if ref_date <= exp_date:
+            return f"101V{ref_date.year % 10}{month:02d}"
+    return f"101V{(ref_date.year + 1) % 10}03"
 
 
 def _compute_expiry_code(product_key: str, ref_date: Optional[_date] = None) -> str:
@@ -159,14 +175,18 @@ class OptionsDataService:
         self._kis_client: Optional[KISClient] = None
         self._board_task: Optional[asyncio.Task] = None
         self._investor_task: Optional[asyncio.Task] = None
+        self._futures_task: Optional[asyncio.Task] = None
         self._running = False
         # Per-product caches
         self._last_board: dict[str, dict] = {}
         self._last_investor: dict[str, dict] = {}
+        self._last_futures: Optional[dict] = None
+        self._investor_store = InvestorStore()
 
     async def start(self):
         self._running = True
         self._kis_client = KISClient()
+        await self._investor_store.init()
 
         if not settings.kis_app_key or settings.kis_app_key == "your_app_key_here":
             logger.warning("KIS_APP_KEY not configured. Options service running without live data.")
@@ -183,6 +203,7 @@ class OptionsDataService:
 
         self._board_task = asyncio.create_task(self._board_poll_loop())
         self._investor_task = asyncio.create_task(self._investor_poll_loop())
+        self._futures_task = asyncio.create_task(self._futures_poll_loop())
 
     async def stop(self):
         self._running = False
@@ -190,8 +211,11 @@ class OptionsDataService:
             self._board_task.cancel()
         if self._investor_task:
             self._investor_task.cancel()
+        if self._futures_task:
+            self._futures_task.cancel()
         if self._kis_client:
             await self._kis_client.close()
+        await self._investor_store.close()
 
     async def add_client(self, ws: WebSocket, product: str = "WKI"):
         product = product if product in PRODUCTS else "WKI"
@@ -211,12 +235,23 @@ class OptionsDataService:
             except Exception:
                 pass
 
+        # Send last known futures price
+        if self._last_futures:
+            try:
+                await ws.send_text(json.dumps(self._last_futures))
+            except Exception:
+                pass
+
         # Send current market status
         status = get_options_market_status()
         try:
             await ws.send_text(json.dumps({"type": "options_status", "is_open": status.is_open}))
         except Exception:
             pass
+
+    @property
+    def investor_store(self) -> InvestorStore:
+        return self._investor_store
 
     def remove_client(self, ws: WebSocket):
         self._clients.discard(ws)
@@ -255,11 +290,16 @@ class OptionsDataService:
                         calls_raw, puts_raw = await self._kis_client.get_options_board(board_code, expiry)
                         calls = [_serialize_strike(r) for r in calls_raw]
                         puts = [_serialize_strike(r) for r in puts_raw]
+                        from datetime import timezone
+                        now_kst = datetime.now(timezone.utc).astimezone(
+                            __import__('zoneinfo', fromlist=['ZoneInfo']).ZoneInfo('Asia/Seoul')
+                        )
                         msg = {
                             "type": "options_board",
                             "product": product_key,
                             "expiry": expiry,
                             "expiry_date": expiry_date.isoformat() if expiry_date else None,
+                            "updated_at": now_kst.strftime("%H:%M:%S"),
                             "calls": calls,
                             "puts": puts,
                         }
@@ -278,14 +318,47 @@ class OptionsDataService:
                         cfg = PRODUCTS.get(product_key, PRODUCTS["WKI"])
                         _, market_iscd, call_iscd2, put_iscd2, _ = cfg
                         inv = await self._kis_client.get_options_investor(market_iscd, call_iscd2, put_iscd2)
+                        call_inv = _serialize_investor(inv.get("call", {}))
+                        put_inv = _serialize_investor(inv.get("put", {}))
+                        delta = await self._investor_store.save(product_key, call_inv, put_inv)
                         msg = {
                             "type": "investor_flow",
                             "product": product_key,
-                            "call_investor": _serialize_investor(inv.get("call", {})),
-                            "put_investor": _serialize_investor(inv.get("put", {})),
+                            "call_investor": call_inv,
+                            "put_investor": put_inv,
+                            "delta": delta,
                         }
                         self._last_investor[product_key] = msg
                         await self._broadcast_to_product(product_key, json.dumps(msg))
                     except Exception as e:
                         logger.warning("Options investor poll error (product=%s): %s", product_key, e)
             await asyncio.sleep(INVESTOR_POLL_INTERVAL)
+
+    async def _futures_poll_loop(self):
+        """Poll KOSPI200 daytime futures price every 2s via REST (H0ZFCNT0 equivalent)."""
+        symbol = _compute_kospi200_futures_symbol()
+        while self._running:
+            status = get_options_market_status()
+            if status.is_open and self._kis_client:
+                # Recompute symbol daily in case of rollover
+                symbol = _compute_kospi200_futures_symbol()
+                try:
+                    data = await self._kis_client.get_day_futures_price(symbol)
+                    msg = {"type": "futures_price", **data}
+                    self._last_futures = msg
+                    await self._broadcast_all(json.dumps(msg))
+                except Exception as e:
+                    logger.debug("Futures price poll error: %s", e)
+            await asyncio.sleep(FUTURES_POLL_INTERVAL)
+
+    async def _broadcast_all(self, payload: str):
+        """Send payload to all connected clients regardless of product."""
+        disconnected = set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                disconnected.add(ws)
+        for ws in disconnected:
+            self._clients.discard(ws)
+            self._client_products.pop(ws, None)
