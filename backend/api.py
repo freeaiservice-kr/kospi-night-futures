@@ -66,6 +66,14 @@ async def get_options_status():
     }
 
 
+@router.get("/api/v1/options/futures-history")
+async def get_futures_history(request: Request, limit: int = 120):
+    """Get KOSPI200 underlying price history for intraday trend display."""
+    options_data = request.app.state.options_data
+    rows = await options_data.futures_store.get_history(limit=limit)
+    return {"rows": rows}
+
+
 @router.get("/api/v1/options/investor-history")
 async def get_investor_history(request: Request, product: str = "WKI", limit: int = 60):
     """Get investor flow history for intraday trend display."""

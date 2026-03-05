@@ -44,6 +44,9 @@ function optionsApp() {
     putInvestor: {},
     investorHistory: [],
 
+    // Futures price history
+    futuresHistory: [],
+
     // Computed
     get futuresPriceFormatted() {
       if (this.futuresPrice === null) return '—';
@@ -115,6 +118,7 @@ function optionsApp() {
       this._connect();
       this._pollStatus();
       this._loadInvestorHistory();
+      this._loadFuturesHistory();
     },
 
     _wsUrl() {
@@ -243,6 +247,19 @@ function optionsApp() {
       } catch (e) {
         console.warn('Investor history load error:', e);
       }
+    },
+
+    async _loadFuturesHistory() {
+      try {
+        const resp = await fetch('/api/v1/options/futures-history?limit=120');
+        if (resp.ok) {
+          const data = await resp.json();
+          this.futuresHistory = data.rows || [];
+        }
+      } catch (e) {
+        console.warn('Futures history load error:', e);
+      }
+      setTimeout(() => this._loadFuturesHistory(), 60000);
     },
 
     // Formatters

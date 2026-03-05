@@ -96,22 +96,54 @@
       </div>
     </div>
 
+    <!-- KOSPI200 기초자산 가격 추이 -->
+    <div class="card" style="margin-top: 12px;" x-show="futuresHistory.length > 0">
+      <div class="card__title" style="display:flex; align-items:center; justify-content:space-between;">
+        <span>KOSPI200 기초자산 가격 추이</span>
+        <span style="font-size:0.72rem; color:var(--text-secondary); font-weight:400;">최근 <span x-text="futuresHistory.length"></span>건 · 30초 간격</span>
+      </div>
+      <div style="overflow-x: auto; max-height: 260px; overflow-y: auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.78rem; white-space:nowrap;">
+          <thead style="position:sticky; top:0; background:var(--bg-card); z-index:1;">
+            <tr style="color:var(--text-secondary); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.08);">
+              <th style="padding:4px 8px; text-align:left;">시각</th>
+              <th style="padding:4px 8px; text-align:right;">가격</th>
+              <th style="padding:4px 8px; text-align:right;">전일대비</th>
+              <th style="padding:4px 8px; text-align:right;">등락률</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="row in futuresHistory" :key="row.ts">
+              <tr style="border-top:1px solid rgba(255,255,255,0.03);">
+                <td style="padding:4px 8px; color:var(--text-secondary); font-size:0.72rem;" x-text="row.time"></td>
+                <td style="padding:4px 8px; text-align:right; font-weight:600;" x-text="row.price?.toFixed(2) ?? '—'"></td>
+                <td style="padding:4px 8px; text-align:right;" :class="row.change >= 0 ? 'flow-positive' : 'flow-negative'"
+                    x-text="row.change != null ? (row.change >= 0 ? '+' : '') + row.change.toFixed(2) : '—'"></td>
+                <td style="padding:4px 8px; text-align:right; font-size:0.72rem;" :class="row.change_pct >= 0 ? 'flow-positive' : 'flow-negative'"
+                    x-text="row.change_pct != null ? (row.change_pct >= 0 ? '+' : '') + row.change_pct.toFixed(2) + '%' : '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Investor flow history trend -->
     <div class="card" style="margin-top: 12px;" x-show="investorHistory.length > 0">
       <div class="card__title" style="display:flex; align-items:center; justify-content:space-between;">
         <span>투자자별 매매동향 추이 (순매수 계약수)</span>
         <span style="font-size:0.72rem; color:var(--text-secondary); font-weight:400;">최근 <span x-text="investorHistory.length"></span>건 · 30초 간격</span>
       </div>
-      <div style="overflow-x: auto;">
+      <div style="overflow-x: auto; max-height: 260px; overflow-y: auto;">
         <table style="width:100%; border-collapse:collapse; font-size:0.78rem; white-space:nowrap;">
-          <thead>
+          <thead style="position:sticky; top:0; background:var(--bg-card); z-index:1;">
             <tr style="color:var(--text-secondary); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.08);">
               <th style="padding:4px 8px; text-align:left;">시각</th>
               <th style="padding:4px 8px; text-align:right;" colspan="2">외국인</th>
               <th style="padding:4px 8px; text-align:right;" colspan="2">개인</th>
               <th style="padding:4px 8px; text-align:right;" colspan="2">기관계</th>
             </tr>
-            <tr style="color:var(--text-secondary); font-size:0.65rem; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <tr style="color:var(--text-secondary); font-size:0.65rem; border-bottom:1px solid rgba(255,255,255,0.06); background:var(--bg-card);">
               <th style="padding:2px 8px;"></th>
               <th style="padding:2px 6px; text-align:right; color:var(--color-accent);">콜</th>
               <th style="padding:2px 6px; text-align:right; color:#ff8a80;">풋</th>

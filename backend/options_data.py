@@ -17,6 +17,7 @@ from backend.config import settings
 from backend.kis_client import KISClient, KISAuthError
 from backend.market_status import get_options_market_status
 from backend.investor_store import InvestorStore
+from backend.futures_store import FuturesStore
 
 logger = logging.getLogger(__name__)
 
@@ -182,11 +183,14 @@ class OptionsDataService:
         self._last_investor: dict[str, dict] = {}
         self._last_futures: Optional[dict] = None
         self._investor_store = InvestorStore()
+        self._futures_store = FuturesStore()
+        self._last_futures_save_ts: float = 0  # throttle saves to every 30s
 
     async def start(self):
         self._running = True
         self._kis_client = KISClient()
         await self._investor_store.init()
+        await self._futures_store.init()
 
         if not settings.kis_app_key or settings.kis_app_key == "your_app_key_here":
             logger.warning("KIS_APP_KEY not configured. Options service running without live data.")
@@ -216,6 +220,7 @@ class OptionsDataService:
         if self._kis_client:
             await self._kis_client.close()
         await self._investor_store.close()
+        await self._futures_store.close()
 
     async def add_client(self, ws: WebSocket, product: str = "WKI"):
         product = product if product in PRODUCTS else "WKI"
@@ -252,6 +257,10 @@ class OptionsDataService:
     @property
     def investor_store(self) -> InvestorStore:
         return self._investor_store
+
+    @property
+    def futures_store(self) -> FuturesStore:
+        return self._futures_store
 
     def remove_client(self, ws: WebSocket):
         self._clients.discard(ws)
@@ -343,10 +352,18 @@ class OptionsDataService:
                 # Recompute symbol daily in case of rollover
                 symbol = _compute_kospi200_futures_symbol()
                 try:
+                    import time as _time
                     data = await self._kis_client.get_day_futures_price(symbol)
                     msg = {"type": "futures_price", **data}
                     self._last_futures = msg
                     await self._broadcast_all(json.dumps(msg))
+                    # Save snapshot every 30s
+                    now = _time.monotonic()
+                    if now - self._last_futures_save_ts >= 30:
+                        await self._futures_store.save(
+                            data.get("price"), data.get("change"), data.get("change_pct")
+                        )
+                        self._last_futures_save_ts = now
                 except Exception as e:
                     logger.debug("Futures price poll error: %s", e)
             await asyncio.sleep(FUTURES_POLL_INTERVAL)
