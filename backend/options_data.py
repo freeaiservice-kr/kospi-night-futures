@@ -8,7 +8,8 @@ Poll intervals: board every 5s, investor every 30s.
 import asyncio
 import json
 import logging
-from datetime import date as _date, datetime
+from calendar import monthcalendar, THURSDAY
+from datetime import date as _date
 from typing import Optional
 
 from fastapi import WebSocket
@@ -30,6 +31,8 @@ PRODUCTS = {
     "KQI":      ("KOSDAQ150", "KQI", "OC03", "OP03", "KQI"),
 }
 
+_KO_WEEKDAY = ["월", "화", "수", "목", "금", "토", "일"]
+
 
 def _compute_expiry_code(product_key: str, ref_date: Optional[_date] = None) -> str:
     """Compute current front expiry code for a given product."""
@@ -38,26 +41,28 @@ def _compute_expiry_code(product_key: str, ref_date: Optional[_date] = None) -> 
 
     if product_key == "WKI":
         # Current week's Thursday in YYMMWW format
-        # Find the Thursday of the current week
         days_until_thu = (3 - ref_date.weekday()) % 7
-        thu = ref_date if ref_date.weekday() == 3 else ref_date.replace(
-            day=ref_date.day + days_until_thu if days_until_thu >= 0 else ref_date.day + days_until_thu + 7
-        )
-        # Week number of month (1-indexed)
+        if days_until_thu == 0 and ref_date.weekday() != 3:
+            days_until_thu = 7
+        thu = ref_date if ref_date.weekday() == 3 else _date(
+            ref_date.year, ref_date.month, ref_date.day + days_until_thu
+        ) if (ref_date.day + days_until_thu) <= 31 else ref_date
+        # Safer calculation
+        from datetime import timedelta
+        days_to_thu = (3 - ref_date.weekday()) % 7
+        thu = ref_date + timedelta(days=days_to_thu)
         week_num = (thu.day - 1) // 7 + 1
         return f"{thu.strftime('%y%m')}{week_num:02d}"
 
     if product_key == "WKM":
         # Current week's Monday in YYMMWW format
-        days_until_mon = (0 - ref_date.weekday()) % 7
-        mon = ref_date if ref_date.weekday() == 0 else ref_date.replace(
-            day=ref_date.day + days_until_mon
-        )
+        from datetime import timedelta
+        days_to_mon = (0 - ref_date.weekday()) % 7
+        mon = ref_date + timedelta(days=days_to_mon)
         week_num = (mon.day - 1) // 7 + 1
         return f"{mon.strftime('%y%m')}{week_num:02d}"
 
     # Monthly: YYYYMM format - find front month (current or next if expired)
-    from calendar import monthcalendar, THURSDAY
     year, month = ref_date.year, ref_date.month
     for _ in range(4):
         weeks = monthcalendar(year, month)
@@ -71,6 +76,47 @@ def _compute_expiry_code(product_key: str, ref_date: Optional[_date] = None) -> 
             month = 1
             year += 1
     return f"{ref_date.year}{ref_date.month:02d}"
+
+
+def _compute_expiry_date(product_key: str, expiry_code: str) -> Optional[_date]:
+    """Convert expiry code to actual calendar date."""
+    try:
+        if product_key in ("WKI", "WKM"):
+            # YYMMWW → find Nth Thursday (WKI) or Monday (WKM)
+            yy = int(expiry_code[:2])
+            mm = int(expiry_code[2:4])
+            ww = int(expiry_code[4:6])
+            year = 2000 + yy
+            target_weekday = 3 if product_key == "WKI" else 0  # Thu=3, Mon=0
+            count = 0
+            for day in range(1, 32):
+                try:
+                    d = _date(year, mm, day)
+                    if d.weekday() == target_weekday:
+                        count += 1
+                        if count == ww:
+                            return d
+                except ValueError:
+                    break
+        else:
+            # YYYYMM → second Thursday
+            year = int(expiry_code[:4])
+            month = int(expiry_code[4:6])
+            weeks = monthcalendar(year, month)
+            thursdays = [w[THURSDAY] for w in weeks if w[THURSDAY] != 0]
+            day = thursdays[1] if len(thursdays) >= 2 else thursdays[0]
+            return _date(year, month, day)
+    except Exception:
+        pass
+    return None
+
+
+def _format_expiry_date(expiry_date: Optional[_date]) -> str:
+    """Format expiry date as 'YYYY/MM/DD(요일)'."""
+    if expiry_date is None:
+        return "—"
+    dow = _KO_WEEKDAY[expiry_date.weekday()]
+    return f"{expiry_date.strftime('%Y/%m/%d')}({dow})"
 
 
 def _serialize_strike(row: dict) -> dict:
@@ -109,13 +155,14 @@ class OptionsDataService:
 
     def __init__(self):
         self._clients: set[WebSocket] = set()
+        self._client_products: dict[WebSocket, str] = {}  # per-client product
         self._kis_client: Optional[KISClient] = None
         self._board_task: Optional[asyncio.Task] = None
         self._investor_task: Optional[asyncio.Task] = None
         self._running = False
-        self._active_product = "WKI"  # default
-        self._last_board: Optional[dict] = None
-        self._last_investor: Optional[dict] = None
+        # Per-product caches
+        self._last_board: dict[str, dict] = {}
+        self._last_investor: dict[str, dict] = {}
 
     async def start(self):
         self._running = True
@@ -146,20 +193,24 @@ class OptionsDataService:
         if self._kis_client:
             await self._kis_client.close()
 
-    async def add_client(self, ws: WebSocket):
+    async def add_client(self, ws: WebSocket, product: str = "WKI"):
+        product = product if product in PRODUCTS else "WKI"
         self._clients.add(ws)
-        logger.info("Options client connected. Total: %d", len(self._clients))
-        # Send last known state immediately
-        if self._last_board:
+        self._client_products[ws] = product
+        logger.info("Options client connected (product=%s). Total: %d", product, len(self._clients))
+
+        # Send cached state for this product immediately
+        if product in self._last_board:
             try:
-                await ws.send_text(json.dumps(self._last_board))
+                await ws.send_text(json.dumps(self._last_board[product]))
             except Exception:
                 pass
-        if self._last_investor:
+        if product in self._last_investor:
             try:
-                await ws.send_text(json.dumps(self._last_investor))
+                await ws.send_text(json.dumps(self._last_investor[product]))
             except Exception:
                 pass
+
         # Send current market status
         status = get_options_market_status()
         try:
@@ -169,59 +220,72 @@ class OptionsDataService:
 
     def remove_client(self, ws: WebSocket):
         self._clients.discard(ws)
+        self._client_products.pop(ws, None)
         logger.info("Options client disconnected. Total: %d", len(self._clients))
 
-    async def _broadcast(self, payload: str):
+    def _active_products(self) -> set[str]:
+        """Unique products among connected clients; fallback to WKI."""
+        products = set(self._client_products.values())
+        return products if products else {"WKI"}
+
+    async def _broadcast_to_product(self, product: str, payload: str):
+        """Send payload only to clients subscribed to a given product."""
         disconnected = set()
         for ws in list(self._clients):
+            if self._client_products.get(ws) != product:
+                continue
             try:
                 await ws.send_text(payload)
             except Exception:
                 disconnected.add(ws)
-        self._clients -= disconnected
+        for ws in disconnected:
+            self._clients.discard(ws)
+            self._client_products.pop(ws, None)
 
     async def _board_poll_loop(self):
         while self._running:
             status = get_options_market_status()
             if status.is_open and self._kis_client:
-                try:
-                    product_key = self._active_product
-                    cfg = PRODUCTS.get(product_key, PRODUCTS["WKI"])
-                    _, market_iscd, _, _, board_code = cfg
-                    expiry = _compute_expiry_code(product_key)
-                    calls_raw, puts_raw = await self._kis_client.get_options_board(board_code, expiry)
-                    calls = [_serialize_strike(r) for r in calls_raw]
-                    puts = [_serialize_strike(r) for r in puts_raw]
-                    msg = {
-                        "type": "options_board",
-                        "product": product_key,
-                        "expiry": expiry,
-                        "calls": calls,
-                        "puts": puts,
-                    }
-                    self._last_board = msg
-                    await self._broadcast(json.dumps(msg))
-                except Exception as e:
-                    logger.warning("Options board poll error: %s", e)
+                for product_key in self._active_products():
+                    try:
+                        cfg = PRODUCTS.get(product_key, PRODUCTS["WKI"])
+                        _, market_iscd, _, _, board_code = cfg
+                        expiry = _compute_expiry_code(product_key)
+                        expiry_date = _compute_expiry_date(product_key, expiry)
+                        calls_raw, puts_raw = await self._kis_client.get_options_board(board_code, expiry)
+                        calls = [_serialize_strike(r) for r in calls_raw]
+                        puts = [_serialize_strike(r) for r in puts_raw]
+                        msg = {
+                            "type": "options_board",
+                            "product": product_key,
+                            "expiry": expiry,
+                            "expiry_date": expiry_date.isoformat() if expiry_date else None,
+                            "calls": calls,
+                            "puts": puts,
+                        }
+                        self._last_board[product_key] = msg
+                        await self._broadcast_to_product(product_key, json.dumps(msg))
+                    except Exception as e:
+                        logger.warning("Options board poll error (product=%s): %s", product_key, e)
             await asyncio.sleep(BOARD_POLL_INTERVAL)
 
     async def _investor_poll_loop(self):
         while self._running:
             status = get_options_market_status()
             if status.is_open and self._kis_client:
-                try:
-                    product_key = self._active_product
-                    cfg = PRODUCTS.get(product_key, PRODUCTS["WKI"])
-                    _, market_iscd, call_iscd2, put_iscd2, _ = cfg
-                    inv = await self._kis_client.get_options_investor(market_iscd, call_iscd2, put_iscd2)
-                    msg = {
-                        "type": "investor_flow",
-                        "product": product_key,
-                        "call_investor": _serialize_investor(inv.get("call", {})),
-                        "put_investor": _serialize_investor(inv.get("put", {})),
-                    }
-                    self._last_investor = msg
-                    await self._broadcast(json.dumps(msg))
-                except Exception as e:
-                    logger.warning("Options investor poll error: %s", e)
+                for product_key in self._active_products():
+                    try:
+                        cfg = PRODUCTS.get(product_key, PRODUCTS["WKI"])
+                        _, market_iscd, call_iscd2, put_iscd2, _ = cfg
+                        inv = await self._kis_client.get_options_investor(market_iscd, call_iscd2, put_iscd2)
+                        msg = {
+                            "type": "investor_flow",
+                            "product": product_key,
+                            "call_investor": _serialize_investor(inv.get("call", {})),
+                            "put_investor": _serialize_investor(inv.get("put", {})),
+                        }
+                        self._last_investor[product_key] = msg
+                        await self._broadcast_to_product(product_key, json.dumps(msg))
+                    except Exception as e:
+                        logger.warning("Options investor poll error (product=%s): %s", product_key, e)
             await asyncio.sleep(INVESTOR_POLL_INTERVAL)

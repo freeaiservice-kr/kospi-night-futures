@@ -27,6 +27,7 @@ function optionsApp() {
     rawCalls: [],
     rawPuts: [],
     expiryDisplay: '—',
+    expiryCode: '—',
 
     // Investor data
     callInvestor: {},
@@ -74,7 +75,7 @@ function optionsApp() {
 
     _wsUrl() {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${proto}//${location.host}/ws/options`;
+      return `${proto}//${location.host}/ws/options?product=${this.activeProduct}`;
     },
 
     _connect() {
@@ -107,9 +108,19 @@ function optionsApp() {
 
     _handleMessage(msg) {
       if (msg.type === 'options_board') {
+        // Only update if message is for the currently selected product
+        if (msg.product && msg.product !== this.activeProduct) return;
         this.rawCalls = msg.calls || [];
         this.rawPuts = msg.puts || [];
-        this.expiryDisplay = msg.expiry || '—';
+        this.expiryCode = msg.expiry || '—';
+        // Format expiry_date if provided, else show raw code
+        if (msg.expiry_date) {
+          const d = new Date(msg.expiry_date);
+          const days = ['일', '월', '화', '수', '목', '금', '토'];
+          this.expiryDisplay = `${msg.expiry_date.replace(/-/g, '/')}(${days[d.getDay()]})`;
+        } else {
+          this.expiryDisplay = msg.expiry || '—';
+        }
       } else if (msg.type === 'investor_flow') {
         this.callInvestor = msg.call_investor || {};
         this.putInvestor = msg.put_investor || {};

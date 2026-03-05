@@ -67,11 +67,11 @@ async def get_options_status():
 
 
 @router.websocket("/ws/options")
-async def ws_options(websocket: WebSocket):
+async def ws_options(websocket: WebSocket, product: str = "WKI"):
     """WebSocket endpoint: real-time options stream to browsers."""
     await websocket.accept()
     options_data = websocket.app.state.options_data
-    await options_data.add_client(websocket)
+    await options_data.add_client(websocket, product=product)
     try:
         while True:
             data = await websocket.receive_text()
