@@ -25,7 +25,7 @@ export function initChart(containerId) {
     width: container.clientWidth,
     height: container.clientHeight,
     layout: {
-      background: { type: 'solid', color: '#0f3460' },
+      background: { type: 'solid', color: '#1E293B' },
       textColor: '#a0a0b0',
     },
     grid: {

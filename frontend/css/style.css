@@ -1,14 +1,14 @@
 :root {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --bg-card: #0f3460;
-  --text-primary: #e0e0e0;
-  --text-secondary: #a0a0b0;
-  --color-up: #00c853;
-  --color-down: #ff1744;
-  --color-neutral: #e0e0e0;
-  --color-accent: #4fc3f7;
-  --color-warning: #ffd740;
+  --bg-primary: #020617;
+  --bg-secondary: #0F172A;
+  --bg-card: #1E293B;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --color-up: #22C55E;
+  --color-down: #FF1744;
+  --color-neutral: #F8FAFC;
+  --color-accent: #38BDF8;
+  --color-warning: #FCD34D;
   --border-radius: 8px;
   --spacing: 16px;
 }
@@ -22,9 +22,32 @@
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family: 'Pretendard', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Fira Sans', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   min-height: 100vh;
   line-height: 1.5;
+}
+
+/* Fira Code for numeric/price elements */
+.price-main,
+.stat-item__value,
+.orderbook-price,
+.orderbook-ask,
+.orderbook-bid,
+.cell-price,
+.strike-center,
+.pc-panel__value,
+.indicator-item__value {
+  font-family: 'Fira Code', monospace;
+}
+
+/* Price flash glow animation */
+@keyframes price-flash {
+  0%, 100% { text-shadow: none; }
+  50% { text-shadow: 0 0 8px currentColor; }
+}
+
+.ticker-price-flash {
+  animation: price-flash 0.3s ease;
 }
 
 /* Header */
@@ -275,6 +298,138 @@ body {
   margin-right: 6px;
 }
 
+/* ===== DASHBOARD GRID (40/60) ===== */
+.dashboard-main {
+  display: grid;
+  grid-template-columns: 40% 60%;
+  gap: var(--spacing);
+  max-width: 1920px;
+  margin: 0 auto;
+  padding: var(--spacing);
+}
+
+.left-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.right-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Mobile segment control */
+.segment-control {
+  display: flex;
+  gap: 0;
+  padding: 8px var(--spacing);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.segment-btn {
+  flex: 1;
+  padding: 8px 16px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.segment-btn:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.segment-btn:last-child {
+  border-radius: 0 6px 6px 0;
+  border-left: none;
+}
+
+.segment-btn--active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #0f1923;
+}
+
+/* Desktop/mobile visibility */
+@media (max-width: 1024px) {
+  #desktop-layout { display: none; }
+  #mobile-layout { display: block; }
+}
+
+@media (min-width: 1025px) {
+  #mobile-layout { display: none; }
+}
+
+/* ===== TICKER BAR ===== */
+.ticker-bar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #0F172A;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 7px var(--spacing);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  font-size: 0.82rem;
+  min-height: 36px;
+}
+
+.fira-code {
+  font-family: 'Fira Code', monospace;
+}
+
+.ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.ticker-item--primary {
+  padding-left: 0;
+}
+
+.ticker-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+}
+
+.ticker-price {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.ticker-sep {
+  color: rgba(255,255,255,0.15);
+  font-size: 0.75rem;
+  user-select: none;
+}
+
+.ticker-oi-change {
+  font-size: 0.75rem;
+}
+
+.ticker-strike {
+  font-weight: 600;
+  color: var(--color-warning);
+}
+
+.ticker-up { color: #22C55E; }
+.ticker-down { color: #FF1744; }
+.ticker-neutral { color: var(--text-primary); }
+
 /* ===== OPTIONS PAGE ===== */
 
 /* Product tabs */
@@ -403,14 +558,22 @@ body {
 }
 
 .strike-row--atm {
-  background: rgba(255,215,64,0.07);
+  background: rgba(252,211,77,0.07);
   border-radius: 4px;
-  border-bottom: 1px solid rgba(255,215,64,0.2);
+  border-bottom: 1px solid rgba(252,211,77,0.2);
 }
 
 .strike-row--atm .strike-center {
   color: var(--color-warning);
   font-weight: 800;
+}
+
+.strike-row--atm .call-side {
+  background: linear-gradient(to right, rgba(252,211,77,0.06), transparent);
+}
+
+.strike-row--atm .put-side {
+  background: linear-gradient(to left, rgba(252,211,77,0.06), transparent);
 }
 
 .call-side {
@@ -622,3 +785,77 @@ body {
 .pc-ratio--bearish { color: var(--color-down); }
 .pc-ratio--bullish { color: var(--color-up); }
 .pc-ratio--neutral { color: var(--text-primary); }
+
+/* ===== DRILLDOWN: Greeks + OI inline panel ===== */
+.greeks-panel {
+  background: rgba(255,255,255,0.03);
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin: 2px 0 4px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.greeks-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.greeks-grid span {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-toggle {
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.detail-toggle:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.toggle-btn {
+  font-size: 0.72rem;
+  padding: 4px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.toggle-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* Compact 4-col board (default) */
+.call-side--compact {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.put-side--compact {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* Strike row clickable */
+.strike-row {
+  cursor: pointer;
+}
+
+.strike-row--selected {
+  background: rgba(79,195,247,0.07);
+  border-radius: 3px;
+}
