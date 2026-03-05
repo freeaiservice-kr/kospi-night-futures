@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /ws/
+Disallow: /health
+
+Sitemap: https://xn--6i4bt3f.com/sitemap.xml
