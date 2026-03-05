@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,7 @@ import pathlib
 from backend.config import settings
 from backend.api import router
 from backend.market_data import MarketDataService
+from backend.options_data import OptionsDataService
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -21,11 +23,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting KOSPI Night Futures service...")
     market_data = MarketDataService()
+    options_data = OptionsDataService()
     app.state.market_data = market_data
-    await market_data.start()
+    app.state.options_data = options_data
+    await asyncio.gather(market_data.start(), options_data.start())
     logger.info("Service started.")
     yield
-    await market_data.stop()
+    await asyncio.gather(market_data.stop(), options_data.stop())
     logger.info("Shutdown complete.")
 
 

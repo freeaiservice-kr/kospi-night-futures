@@ -235,6 +235,43 @@ class KISClient:
             expiry_warning=expiry_warning,
         )
 
+    async def get_options_board(self, product_code: str, expiry_code: str) -> tuple[list, list]:
+        """Fetch options board (call/put) from KIS FHPIF05030100."""
+        await self._ensure_client()
+        token = await self._get_token()
+        url = f"{settings.kis_base_url}/uapi/domestic-futureoption/v1/quotations/display-board-callput"
+        headers = self._make_headers(token, "FHPIF05030100")
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "O",
+            "FID_COND_SCR_DIV_CODE": "20503",
+            "FID_MRKT_CLS_CODE": "CO",
+            "FID_MTRT_CNT": expiry_code,
+            "FID_COND_MRKT_CLS_CODE": product_code,
+            "FID_MRKT_CLS_CODE1": "PO",
+        }
+        resp = await self._client.get(url, headers=headers, params=params)  # type: ignore
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("rt_cd") != "0":
+            raise KISAPIError(f"Options board error: {data.get('msg1')} (product={product_code}, expiry={expiry_code})")
+        return data.get("output1", []), data.get("output2", [])
+
+    async def get_options_investor(self, market_iscd: str, call_iscd2: str, put_iscd2: str) -> dict:
+        """Fetch investor trading trend for call+put from KIS FHPTJ04030000."""
+        await self._ensure_client()
+        token = await self._get_token()
+        url = f"{settings.kis_base_url}/uapi/domestic-stock/v1/quotations/inquire-investor-time-by-market"
+        headers = self._make_headers(token, "FHPTJ04030000")
+
+        async def _fetch(iscd2: str) -> dict:
+            r = await self._client.get(url, headers=headers, params={"fid_input_iscd": market_iscd, "fid_input_iscd_2": iscd2})  # type: ignore
+            r.raise_for_status()
+            d = r.json()
+            return (d.get("output") or [{}])[0]
+
+        call_data, put_data = await asyncio.gather(_fetch(call_iscd2), _fetch(put_iscd2))
+        return {"call": call_data, "put": put_data}
+
     async def close(self):
         if self._client:
             await self._client.aclose()

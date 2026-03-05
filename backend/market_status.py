@@ -156,3 +156,41 @@ def _next_open_time(now: datetime, open_h: int, open_m: int) -> datetime:
         candidate += timedelta(days=1)
 
     return candidate
+
+
+def get_options_market_status(now: datetime | None = None) -> MarketStatus:
+    """
+    Day session options market: 08:45 ~ 15:45 KST weekdays.
+    Pre-open: 08:00 ~ 08:45. Expiry day close: 15:20 (not tracked here).
+    """
+    if now is None:
+        now = datetime.now()
+
+    today = now.date()
+    current_minutes = now.hour * 60 + now.minute
+
+    open_minutes = 8 * 60 + 45   # 08:45
+    close_minutes = 15 * 60 + 45  # 15:45
+
+    is_weekend = today.weekday() >= 5
+    is_holiday = today in KRX_HOLIDAYS_2026
+
+    if is_weekend or is_holiday:
+        next_open_candidate = now.replace(hour=8, minute=45, second=0, microsecond=0)
+        if now >= next_open_candidate:
+            next_open_candidate = next_open_candidate.replace(day=today.day + 1)
+        return MarketStatus(is_open=False, session_name="closed", next_open=next_open_candidate)
+
+    in_session = open_minutes <= current_minutes < close_minutes
+
+    if in_session:
+        next_close = now.replace(hour=15, minute=45, second=0, microsecond=0)
+        return MarketStatus(is_open=True, session_name="day", next_close=next_close)
+
+    next_open = now.replace(hour=8, minute=45, second=0, microsecond=0)
+    if current_minutes >= close_minutes:
+        from datetime import timedelta
+        next_open += timedelta(days=1)
+        while next_open.weekday() >= 5 or next_open.date() in KRX_HOLIDAYS_2026:
+            next_open += timedelta(days=1)
+    return MarketStatus(is_open=False, session_name="closed", next_open=next_open)

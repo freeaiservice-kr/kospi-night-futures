@@ -47,3 +47,39 @@ async def ws_futures(websocket: WebSocket):
         logger.debug("WS client error: %s", e)
     finally:
         market_data.remove_client(websocket)
+
+
+def _get_options_data(request: Request):
+    return request.app.state.options_data
+
+
+@router.get("/api/v1/options/status")
+async def get_options_status():
+    """Get current options market session status."""
+    from backend.market_status import get_options_market_status
+    status = get_options_market_status()
+    return {
+        "is_open": status.is_open,
+        "session_name": status.session_name,
+        "next_open": status.next_open.isoformat() if status.next_open else None,
+        "next_close": status.next_close.isoformat() if status.next_close else None,
+    }
+
+
+@router.websocket("/ws/options")
+async def ws_options(websocket: WebSocket):
+    """WebSocket endpoint: real-time options stream to browsers."""
+    await websocket.accept()
+    options_data = websocket.app.state.options_data
+    await options_data.add_client(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text('{"type":"pong"}')
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.debug("Options WS client error: %s", e)
+    finally:
+        options_data.remove_client(websocket)

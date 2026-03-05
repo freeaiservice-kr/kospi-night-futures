@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="KOSPI 200 옵션 전광판 - 콜/풋 실시간 시세 및 투자자별 매매동향">
+  <title>야선 - KOSPI 옵션 전광판</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="/assets/favicon.ico">
+  <script type="module" src="/js/options_app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="optionsApp">
+
+  <header class="header">
+    <a href="/" class="header__title">야선 <span style="font-size:0.7em; color: var(--text-secondary);">옵션</span></a>
+    <nav class="header__nav">
+      <a href="/">야간선물</a>
+      <a href="/about.html">서비스 소개</a>
+    </nav>
+  </header>
+
+  <main class="container">
+
+    <!-- Controls row -->
+    <div class="options-controls" style="margin-top: 16px;">
+      <!-- Product tabs -->
+      <div class="product-tabs">
+        <template x-for="(label, key) in productLabels" :key="key">
+          <button class="product-tab"
+            :class="{ 'product-tab--active': activeProduct === key }"
+            @click="setProduct(key)"
+            x-text="label">
+          </button>
+        </template>
+      </div>
+
+      <!-- Status badge -->
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+        <span class="status-badge"
+          :class="{
+            'status-badge--connected': connectionState === 'connected',
+            'status-badge--reconnecting': connectionState === 'reconnecting',
+            'status-badge--disconnected': connectionState === 'disconnected'
+          }"
+          x-text="connectionState === 'connected' ? '연결됨' : connectionState === 'reconnecting' ? '연결 중...' : '연결 끊김'">
+        </span>
+        <span x-show="isMarketOpen" class="session-status session-status--night" style="margin-bottom: 0;">
+          <span class="live-dot"></span>장중
+        </span>
+        <span x-show="!isMarketOpen" class="session-status session-status--closed" style="margin-bottom: 0;">
+          장외
+        </span>
+        <span style="font-size: 0.78rem; color: var(--text-secondary);">
+          만기: <strong x-text="expiryDisplay"></strong>
+        </span>
+      </div>
+    </div>
+
+    <!-- Investor flow panel -->
+    <div class="card" style="margin-top: 12px;" x-show="hasInvestorData">
+      <div class="card__title">투자자별 매매동향 (순매수 계약수)</div>
+      <div class="investor-flow-grid">
+        <!-- Header -->
+        <div class="investor-flow-header"></div>
+        <div class="investor-flow-header">콜 순매수</div>
+        <div class="investor-flow-header">풋 순매수</div>
+        <!-- 외국인 -->
+        <div class="investor-flow-label">외국인</div>
+        <div class="investor-flow-cell" :class="flowClass(callInvestor.frgn_ntby)" x-text="fmtFlow(callInvestor.frgn_ntby)"></div>
+        <div class="investor-flow-cell" :class="flowClass(putInvestor.frgn_ntby)" x-text="fmtFlow(putInvestor.frgn_ntby)"></div>
+        <!-- 개인 -->
+        <div class="investor-flow-label">개인</div>
+        <div class="investor-flow-cell" :class="flowClass(callInvestor.prsn_ntby)" x-text="fmtFlow(callInvestor.prsn_ntby)"></div>
+        <div class="investor-flow-cell" :class="flowClass(putInvestor.prsn_ntby)" x-text="fmtFlow(putInvestor.prsn_ntby)"></div>
+        <!-- 기관계 -->
+        <div class="investor-flow-label">기관계</div>
+        <div class="investor-flow-cell" :class="flowClass(callInvestor.orgn_ntby)" x-text="fmtFlow(callInvestor.orgn_ntby)"></div>
+        <div class="investor-flow-cell" :class="flowClass(putInvestor.orgn_ntby)" x-text="fmtFlow(putInvestor.orgn_ntby)"></div>
+      </div>
+    </div>
+
+    <!-- Options board -->
+    <div class="card" style="margin-top: 12px;">
+      <div class="card__title">옵션 전광판 — <span x-text="activeProductLabel"></span></div>
+
+      <!-- Column headers -->
+      <div class="options-board-header">
+        <div class="call-header">
+          <span>거래량</span><span>IV</span><span>델타</span><span>전일대비</span><span>현재가</span>
+        </div>
+        <div class="strike-header">행사가</div>
+        <div class="put-header">
+          <span>현재가</span><span>전일대비</span><span>델타</span><span>IV</span><span>거래량</span>
+        </div>
+      </div>
+
+      <!-- Board rows -->
+      <div class="options-board-body">
+        <div x-show="board.length === 0" style="text-align: center; padding: 32px; color: var(--text-secondary);">
+          <span x-show="!isMarketOpen">장외 시간입니다 (08:45~15:45)</span>
+          <span x-show="isMarketOpen">데이터 로딩 중...</span>
+        </div>
+        <template x-for="row in board" :key="row.strike">
+          <div class="strike-row" :class="{ 'strike-row--atm': row.call.atm_cls_name === 'ATM' || row.put.atm_cls_name === 'ATM' }">
+            <!-- Call side -->
+            <div class="call-side">
+              <span class="cell-vol" x-text="fmtVol(row.call.acml_vol)"></span>
+              <span class="cell-iv" x-text="fmtIv(row.call.hts_ints_vltl)"></span>
+              <span class="cell-delta" x-text="row.call.delta_val || '—'"></span>
+              <span class="cell-chg" :class="changeClass(row.call.prdy_vrss_sign)" x-text="fmtChg(row.call.optn_prdy_vrss, row.call.prdy_vrss_sign)"></span>
+              <span class="cell-price call-price" x-text="row.call.optn_prpr || '—'"></span>
+            </div>
+            <!-- Strike -->
+            <div class="strike-center" x-text="row.strike"></div>
+            <!-- Put side -->
+            <div class="put-side">
+              <span class="cell-price put-price" x-text="row.put.optn_prpr || '—'"></span>
+              <span class="cell-chg" :class="changeClass(row.put.prdy_vrss_sign)" x-text="fmtChg(row.put.optn_prdy_vrss, row.put.prdy_vrss_sign)"></span>
+              <span class="cell-delta" x-text="row.put.delta_val || '—'"></span>
+              <span class="cell-iv" x-text="fmtIv(row.put.hts_ints_vltl)"></span>
+              <span class="cell-vol" x-text="fmtVol(row.put.acml_vol)"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+    </div>
+
+    <p style="margin-top: 16px; font-size: 0.75rem; color: var(--text-secondary); text-align: center;">
+      본 서비스는 정보 제공 목적으로만 제공됩니다. 투자 권유가 아닙니다.
+    </p>
+
+  </main>
+
+  <footer class="footer">
+    <p>야선.com &copy; 2026 &nbsp;|&nbsp; <a href="/about.html">서비스 소개</a> &nbsp;|&nbsp; <a href="/privacy.html">개인정보처리방침</a></p>
+    <p style="margin-top: 6px;">본 서비스는 투자 권유가 아닙니다. 투자는 본인 판단과 책임 하에 하시기 바랍니다.</p>
+  </footer>
+
+</body>
+</html>
