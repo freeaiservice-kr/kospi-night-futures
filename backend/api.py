@@ -222,8 +222,16 @@ async def get_options_status(_: None = Depends(_require_api_token)):
 
 @router.get("/api/v1/options/futures-history")
 async def get_futures_history(request: Request, limit: int = 120, _=Depends(_require_api_token)):
-    """Get KOSPI200 underlying price history for intraday trend display."""
+    """Get KOSPI200 price history: night session from IntradayStore, day from FuturesStore."""
+    from backend.market_status import get_market_status, get_session_start_ts
+    market_data = request.app.state.market_data
     options_data = request.app.state.options_data
+    if get_market_status().is_open:
+        # Night session: return intraday WebSocket ticks
+        session_ts = get_session_start_ts()
+        rows = await market_data._store.get_session_ticks(session_ts)
+        return {"rows": rows[-limit:]}
+    # Day session: return REST-polled snapshots
     rows = await options_data.futures_store.get_history(limit=limit)
     return {"rows": rows}
 
@@ -251,6 +259,24 @@ async def get_options_latest(request: Request, product: str = "WKI", _=Depends(_
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Options data not available yet",
         )
+    # Fill futures if null: try day REST cache then night WebSocket cache
+    if snapshot.get("futures", {}).get("price") is None:
+        day_fut = options_data._last_futures
+        night_snap = request.app.state.market_data.get_latest_snapshot()
+        if day_fut and day_fut.get("price") is not None:
+            snapshot["futures"] = day_fut
+        elif night_snap:
+            d = night_snap.get("data", {})
+            snapshot["futures"] = {
+                "type": "futures_price",
+                "symbol": d.get("symbol"),
+                "price": night_snap.get("last_trade_price"),
+                "change": d.get("change"),
+                "change_pct": d.get("change_pct"),
+                "high": d.get("high_price"),
+                "low": d.get("low_price"),
+                "open": d.get("open_price"),
+            }
     return snapshot
 
 
