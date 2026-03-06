@@ -5,6 +5,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp
 
+from backend.ban_manager import API_PREFIX
+
 logger = logging.getLogger(__name__)
 
 # Korean domain 야선.com in punycode for HTTP header compatibility
@@ -74,3 +76,40 @@ class BotBlockingMiddleware(BaseHTTPMiddleware):
                 return PlainTextResponse("Forbidden", status_code=403)
 
         return await call_next(request)
+
+
+class IPBanMiddleware(BaseHTTPMiddleware):
+    """Block banned IPs and detect HTTP flood / path scanning."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        try:
+            ban_manager = request.app.state.ban_manager
+            ip = request.client.host if request.client else "unknown"
+
+            if ban_manager.is_banned(ip):
+                return Response(
+                    content='{"detail":"Too many requests. Your IP has been temporarily blocked.","retry_after":86400}',
+                    status_code=429,
+                    headers={"Retry-After": "86400", "Content-Type": "application/json"},
+                )
+
+            if ban_manager.record_http_request(ip, request.url.path):
+                return Response(
+                    content='{"detail":"Too many requests. Your IP has been temporarily blocked.","retry_after":86400}',
+                    status_code=429,
+                    headers={"Retry-After": "86400", "Content-Type": "application/json"},
+                )
+        except Exception as e:
+            logger.critical("IPBanMiddleware error, fail-open: %s", e, exc_info=True)
+
+        response = await call_next(request)
+
+        try:
+            if response.status_code == 404 and request.url.path.startswith(API_PREFIX):
+                ban_manager = request.app.state.ban_manager
+                ip = request.client.host if request.client else "unknown"
+                ban_manager.record_violation(ip, "scan_404")
+        except Exception as e:
+            logger.critical("IPBanMiddleware 404 check error, fail-open: %s", e, exc_info=True)
+
+        return response

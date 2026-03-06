@@ -7,15 +7,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from backend.api import router
+from backend.ban_manager import BanManager
 from backend.config import settings
 from backend.market_data import MarketDataService
-from backend.middleware import BotBlockingMiddleware, SecurityHeadersMiddleware
+from backend.middleware import BotBlockingMiddleware, IPBanMiddleware, SecurityHeadersMiddleware
 from backend.options_data import OptionsDataService
 
 logging.basicConfig(
@@ -28,16 +29,28 @@ logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 
+async def _cleanup_loop(app: FastAPI) -> None:
+    while True:
+        await asyncio.sleep(300)
+        try:
+            app.state.ban_manager.cleanup_expired()
+        except Exception as e:
+            logger.error("BanManager cleanup error: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting KOSPI Night Futures service...")
+    app.state.ban_manager = BanManager()
     market_data = MarketDataService()
     options_data = OptionsDataService()
     app.state.market_data = market_data
     app.state.options_data = options_data
+    cleanup_task = asyncio.create_task(_cleanup_loop(app))
     await asyncio.gather(market_data.start(), options_data.start())
     logger.info("Service started.")
     yield
+    cleanup_task.cancel()
     await asyncio.gather(market_data.stop(), options_data.stop())
     logger.info("Shutdown complete.")
 
@@ -57,11 +70,26 @@ def create_app() -> FastAPI:
 
     # Attach limiter state
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+        ip = request.client.host if request.client else "unknown"
+        try:
+            request.app.state.ban_manager.record_violation(ip, "rate_limit")
+        except Exception:
+            pass
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+            headers={"Retry-After": "60"},
+        )
+
+    app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
     app.add_middleware(SlowAPIMiddleware)
 
-    # Security headers
+    # Security headers then IP ban (FastAPI middleware executes in reverse registration order,
+    # so IPBanMiddleware runs first on incoming requests)
     app.add_middleware(SecurityHeadersMiddleware, environment=settings.environment)
+    app.add_middleware(IPBanMiddleware)
     app.add_middleware(
         BotBlockingMiddleware,
         enabled=settings.bot_block_enabled,

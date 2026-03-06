@@ -82,63 +82,63 @@
   ══════════════════════════════════════════════════════════════════════ -->
   <div class="ticker-bar">
     <div class="ticker-item ticker-item--primary">
-      <span class="ticker-label">야간선물</span>
+      <span class="ticker-label" data-tooltip="야간 KOSPI200 선물의 현재 거래 가격" tabindex="0">야간선물</span>
       <span class="ticker-price fira-code"
         :class="{ 'ticker-up': $store.futures.priceDirection === 'up', 'ticker-down': $store.futures.priceDirection === 'down' }"
         x-text="$store.futures.formattedPrice"></span>
-      <span class="fira-code"
+      <span class="fira-code" data-tooltip="직전 거래일 종가 대비 변화량 (포인트)" tabindex="0"
         :class="{ 'ticker-up': $store.futures.change > 0, 'ticker-down': $store.futures.change < 0, 'ticker-neutral': $store.futures.change === 0 }"
         x-text="$store.futures.formattedChange"></span>
-      <span class="fira-code"
+      <span class="fira-code" data-tooltip="직전 거래일 종가 대비 변화율 (%)" tabindex="0"
         :class="{ 'ticker-up': $store.futures.changePct > 0, 'ticker-down': $store.futures.changePct < 0, 'ticker-neutral': $store.futures.changePct === 0 }"
         x-text="$store.futures.formattedChangePct"></span>
     </div>
     <span class="ticker-sep">|</span>
     <div class="ticker-item">
-      <span class="ticker-label">K200</span>
-      <span class="fira-code"
+      <span class="ticker-label" data-tooltip="KOSPI200 현물 지수 — 선물의 기초자산" tabindex="0">K200</span>
+      <span class="fira-code" data-tooltip="KOSPI200 현물 지수 현재 값" tabindex="0"
         :class="{ 'ticker-up': $store.options.futuresChange > 0, 'ticker-down': $store.options.futuresChange < 0, 'ticker-neutral': !$store.options.futuresChange }"
         x-text="$store.options.futuresPrice !== null ? $store.options.futuresPrice.toFixed(2) : '—'"></span>
-      <span class="fira-code"
+      <span class="fira-code" data-tooltip="직전 거래일 대비 K200 변화량" tabindex="0"
         :class="{ 'ticker-up': $store.options.futuresChange > 0, 'ticker-down': $store.options.futuresChange < 0, 'ticker-neutral': !$store.options.futuresChange }"
         x-text="$store.options.futuresChangeFormatted"></span>
     </div>
     <span class="ticker-sep">|</span>
     <div class="ticker-item">
-      <span class="ticker-label">P/C</span>
+      <span class="ticker-label" data-tooltip="풋/콜 거래량 비율 — 1보다 크면 하락 베팅 우세" tabindex="0">P/C</span>
       <span class="fira-code" :class="$store.options.pcRatioClass" x-text="$store.options.pcRatio"></span>
     </div>
     <span class="ticker-sep">|</span>
     <div class="ticker-item">
-      <span class="ticker-label">CTTR</span>
+      <span class="ticker-label" data-tooltip="현재까지 체결된 계약 수" tabindex="0">CTTR</span>
       <span class="fira-code" :class="$store.futures.cttrClass"
         x-text="$store.futures.cttr !== null ? $store.futures.cttr.toFixed(1) + '%' : '—'"></span>
     </div>
     <span class="ticker-sep">|</span>
     <div class="ticker-item">
-      <span class="ticker-label">BASIS</span>
+      <span class="ticker-label" data-tooltip="선물가 − 현물가 — 양수면 선물이 현물보다 비쌈(콘탱고)" tabindex="0">BASIS</span>
       <span class="fira-code" :class="$store.futures.basisClass"
         x-text="$store.futures.basis !== null ? ($store.futures.basis >= 0 ? '+' : '') + $store.futures.basis.toFixed(2) : '—'"></span>
     </div>
     <span class="ticker-sep">|</span>
     <div class="ticker-item">
-      <span class="ticker-label">OI</span>
+      <span class="ticker-label" data-tooltip="청산되지 않은 미결제 계약 총 수" tabindex="0">OI</span>
       <span class="fira-code"
         x-text="$store.futures.openInterest !== null ? $store.futures.openInterest.toLocaleString('ko-KR') : '—'"></span>
-      <span class="fira-code ticker-oi-change"
+      <span class="fira-code ticker-oi-change" data-tooltip="전일 대비 미결제약정 증감 — 양수면 신규 포지션 유입" tabindex="0"
         :class="$store.futures.oiChange > 0 ? 'ticker-up' : $store.futures.oiChange < 0 ? 'ticker-down' : 'ticker-neutral'"
         x-show="$store.futures.oiChange !== null"
         x-text="$store.futures.oiChange !== null ? ($store.futures.oiChange >= 0 ? '(+' : '(') + $store.futures.oiChange.toLocaleString('ko-KR') + ')' : ''"></span>
     </div>
     <span class="ticker-sep">|</span>
     <div class="ticker-item">
-      <span class="ticker-label">MAX VOL</span>
+      <span class="ticker-label" data-tooltip="오늘 가장 많이 거래된 행사가" tabindex="0">MAX VOL</span>
       <span class="fira-code ticker-strike" x-text="$store.options.topVolumeStrike"></span>
     </div>
     <span class="ticker-sep">|</span>
     <!-- 호가잔량비 B/A -->
     <div class="ticker-item">
-      <span class="ticker-label">B/A</span>
+      <span class="ticker-label" data-tooltip="매수잔량/매도잔량 비율 — 1보다 크면 매수 압력 우세" tabindex="0">B/A</span>
       <span class="fira-code"
         :class="$store.futures.bidAskRatio > 1 ? 'ticker-up' : $store.futures.bidAskRatio < 1 ? 'ticker-down' : 'ticker-neutral'"
         x-text="$store.futures.bidAskRatio ?? '—'"></span>
@@ -146,14 +146,14 @@
     <span class="ticker-sep">|</span>
     <!-- ATM IV -->
     <div class="ticker-item">
-      <span class="ticker-label">ATM IV</span>
+      <span class="ticker-label" data-tooltip="등가격 옵션의 내재변동성 — 시장의 변동성 기대치" tabindex="0">ATM IV</span>
       <span class="fira-code ticker-neutral"
         x-text="$store.options.atmIV !== null ? $store.options.atmIV + '%' : '—'"></span>
     </div>
     <span class="ticker-sep">|</span>
     <!-- IV Skew -->
     <div class="ticker-item">
-      <span class="ticker-label">Skew</span>
+      <span class="ticker-label" data-tooltip="풋IV − 콜IV — 양수면 하락 헤지 수요 많음" tabindex="0">Skew</span>
       <span class="fira-code"
         :class="$store.options.ivSkew > 0 ? 'ticker-down' : $store.options.ivSkew < 0 ? 'ticker-up' : 'ticker-neutral'"
         x-text="$store.options.ivSkew !== null ? ($store.options.ivSkew >= 0 ? '+' : '') + $store.options.ivSkew : '—'"></span>
@@ -161,7 +161,7 @@
     <span class="ticker-sep">|</span>
     <!-- OI P/C Ratio -->
     <div class="ticker-item">
-      <span class="ticker-label">OI P/C</span>
+      <span class="ticker-label" data-tooltip="미결제약정 풋/콜 비율 — 1보다 크면 하락 포지션 우세" tabindex="0">OI P/C</span>
       <span class="fira-code"
         :class="$store.options.oiPcRatio > 1.5 ? 'ticker-down' : $store.options.oiPcRatio < 0.7 ? 'ticker-up' : 'ticker-neutral'"
         x-text="$store.options.oiPcRatio ?? '—'"></span>
@@ -420,16 +420,16 @@
             <!-- compact: price IV delta volume | expanded: +전일대비 -->
             <div class="call-header" :style="$store.ui.expandedBoard ? 'grid-template-columns:repeat(5,1fr)' : 'grid-template-columns:repeat(4,1fr)'">
               <template x-if="$store.ui.expandedBoard"><span>거래량</span></template>
-              <span>IV</span><span>델타</span>
+              <span data-tooltip="내재변동성 — 옵션 가격에 반영된 변동성 예상치" tabindex="0">IV</span><span data-tooltip="기초자산 1p 변화 시 옵션가 변화량 (콜: 0~1)" tabindex="0">델타</span>
               <template x-if="$store.ui.expandedBoard"><span>전일대비</span></template>
-              <span>현재가</span>
+              <span data-tooltip="현재 콜옵션 프리미엄 (거래 가격)" tabindex="0">현재가</span>
               <template x-if="!$store.ui.expandedBoard"><span>거래량</span></template>
             </div>
-            <div class="strike-header">행사가</div>
+            <div class="strike-header" data-tooltip="옵션 계약의 기준 가격 (행사가)" tabindex="0">행사가</div>
             <div class="put-header" :style="$store.ui.expandedBoard ? 'grid-template-columns:repeat(5,1fr)' : 'grid-template-columns:repeat(4,1fr)'">
-              <span>현재가</span>
+              <span data-tooltip="현재 풋옵션 프리미엄 (거래 가격)" tabindex="0">현재가</span>
               <template x-if="$store.ui.expandedBoard"><span>전일대비</span></template>
-              <span>델타</span><span>IV</span>
+              <span data-tooltip="기초자산 1p 변화 시 풋옵션가 변화량 (풋: -1~0)" tabindex="0">델타</span><span data-tooltip="내재변동성 — 풋옵션 가격에 반영된 변동성 예상치" tabindex="0">IV</span>
               <template x-if="$store.ui.expandedBoard"><span>거래량</span></template>
               <template x-if="!$store.ui.expandedBoard"><span>거래량</span></template>
             </div>
@@ -805,16 +805,16 @@
             <div class="options-board-header">
               <div class="call-header" :style="$store.ui.expandedBoard ? 'grid-template-columns:repeat(5,1fr)' : 'grid-template-columns:repeat(4,1fr)'">
                 <template x-if="$store.ui.expandedBoard"><span>거래량</span></template>
-                <span>IV</span><span>델타</span>
+                <span data-tooltip="내재변동성 — 옵션 가격에 반영된 변동성 예상치" tabindex="0">IV</span><span data-tooltip="기초자산 1p 변화 시 옵션가 변화량 (콜: 0~1)" tabindex="0">델타</span>
                 <template x-if="$store.ui.expandedBoard"><span>전일대비</span></template>
-                <span>현재가</span>
+                <span data-tooltip="현재 콜옵션 프리미엄 (거래 가격)" tabindex="0">현재가</span>
                 <template x-if="!$store.ui.expandedBoard"><span>거래량</span></template>
               </div>
-              <div class="strike-header">행사가</div>
+              <div class="strike-header" data-tooltip="옵션 계약의 기준 가격 (행사가)" tabindex="0">행사가</div>
               <div class="put-header" :style="$store.ui.expandedBoard ? 'grid-template-columns:repeat(5,1fr)' : 'grid-template-columns:repeat(4,1fr)'">
-                <span>현재가</span>
+                <span data-tooltip="현재 풋옵션 프리미엄 (거래 가격)" tabindex="0">현재가</span>
                 <template x-if="$store.ui.expandedBoard"><span>전일대비</span></template>
-                <span>델타</span><span>IV</span>
+                <span data-tooltip="기초자산 1p 변화 시 풋옵션가 변화량 (풋: -1~0)" tabindex="0">델타</span><span data-tooltip="내재변동성 — 풋옵션 가격에 반영된 변동성 예상치" tabindex="0">IV</span>
                 <template x-if="$store.ui.expandedBoard"><span>거래량</span></template>
                 <template x-if="!$store.ui.expandedBoard"><span>거래량</span></template>
               </div>

@@ -134,8 +134,20 @@ async def ws_futures(websocket: WebSocket):
         return
 
     client_ip = websocket.client.host if websocket.client else "unknown"
+    try:
+        ban_manager = websocket.app.state.ban_manager
+        if ban_manager.is_banned(client_ip):
+            await websocket.close(code=4429)
+            return
+    except Exception:
+        pass
+
     if _ws_connections[client_ip] >= _WS_MAX_PER_IP:
         logger.warning("WS /ws/futures rejected: too many connections from %s", client_ip)
+        try:
+            websocket.app.state.ban_manager.record_violation(client_ip, "ws_spam")
+        except Exception:
+            pass
         await websocket.close(code=4029)
         return
 
@@ -231,8 +243,20 @@ async def ws_options(websocket: WebSocket, product: str = "WKI"):
         return
 
     client_ip = websocket.client.host if websocket.client else "unknown"
+    try:
+        ban_manager = websocket.app.state.ban_manager
+        if ban_manager.is_banned(client_ip):
+            await websocket.close(code=4429)
+            return
+    except Exception:
+        pass
+
     if _ws_connections[client_ip] >= _WS_MAX_PER_IP:
         logger.warning("WS /ws/options rejected: too many connections from %s", client_ip)
+        try:
+            websocket.app.state.ban_manager.record_violation(client_ip, "ws_spam")
+        except Exception:
+            pass
         await websocket.close(code=4029)
         return
 
