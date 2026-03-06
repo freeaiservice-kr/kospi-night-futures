@@ -198,10 +198,17 @@ document.addEventListener('alpine:init', () => {
     },
 
     async _pollLatest() {
+      // Stop fast polling when market is closed
+      if (!this.optIsMarketOpen) {
+        this.optConnectionState = 'disconnected';
+        this._pollDelayMs = 60000; // check again in 60s
+        this._schedulePoll();
+        return;
+      }
       try {
         const resp = await fetch(`/api/v1/options/latest?product=${this.activeProduct}`);
         if (!resp.ok) {
-          this.optConnectionState = this.optIsMarketOpen ? 'reconnecting' : 'disconnected';
+          this.optConnectionState = 'reconnecting';
           this._pollDelayMs = 5000;
           return;
         }
@@ -212,7 +219,7 @@ document.addEventListener('alpine:init', () => {
         this._pollDelayMs = 3000;
       } catch (e) {
         console.warn('Options polling error:', e);
-        this.optConnectionState = this.optIsMarketOpen ? 'reconnecting' : 'disconnected';
+        this.optConnectionState = 'reconnecting';
         this._pollDelayMs = 5000;
       } finally {
         this._schedulePoll();
@@ -297,7 +304,10 @@ document.addEventListener('alpine:init', () => {
         const resp = await fetch('/api/v1/options/status');
         if (resp.ok) {
           const data = await resp.json();
+          const wasOpen = this.optIsMarketOpen;
           this.optIsMarketOpen = data.is_open;
+          // Restart fast polling when market opens
+          if (!wasOpen && data.is_open) this._startPolling();
         }
       } catch (e) {
         console.warn('Options status poll error:', e);

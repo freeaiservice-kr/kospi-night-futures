@@ -726,11 +726,11 @@
         <div style="margin-top:16px;">
           <div class="options-controls">
             <div class="product-tabs">
-              <template x-for="(label, key) in $store.options.productLabels" :key="key">
+              <template x-for="p in $store.options.products" :key="p.key">
                 <button class="product-tab"
-                  :class="{ 'product-tab--active': $store.options.activeProduct === key }"
-                  @click="$store.options.setProduct(key)"
-                  x-text="label">
+                  :class="{ 'product-tab--active': $store.options.activeProduct === p.key }"
+                  @click="$store.options.setProduct(p.key)"
+                  x-text="p.label">
                 </button>
               </template>
             </div>
