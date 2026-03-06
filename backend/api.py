@@ -110,13 +110,18 @@ async def get_market_session_status(request: Request, _=Depends(_require_api_tok
 @router.get("/api/v1/futures/latest")
 async def get_futures_latest(request: Request, _=Depends(_require_api_token)):
     """Get latest futures quote snapshot for polling clients."""
+    # Night session: WebSocket data from MarketDataService
     market_data = request.app.state.market_data.get_latest_snapshot()
-    if not market_data:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Futures data not available yet",
-        )
-    return market_data
+    if market_data:
+        return market_data
+    # Day session fallback: REST poll data from OptionsDataService
+    day_futures = request.app.state.options_data._last_futures
+    if day_futures:
+        return day_futures
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Futures data not available yet",
+    )
 
 
 @router.websocket("/ws/futures")
