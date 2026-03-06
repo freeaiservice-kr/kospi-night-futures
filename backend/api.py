@@ -186,6 +186,27 @@ def _get_options_data(request: Request):
     return request.app.state.options_data
 
 
+@router.get("/api/v1/options/products")
+async def get_options_products(_: None = Depends(_require_api_token)):
+    """Return all available products sorted by nearest expiry date."""
+    from backend.options_data import PRODUCTS, _compute_expiry_code, _compute_expiry_date
+    from datetime import date
+    today = date.today()
+    items = []
+    for key, cfg in PRODUCTS.items():
+        display_name = cfg[0]
+        code = _compute_expiry_code(key, today)
+        exp = _compute_expiry_date(key, code)
+        items.append({
+            "key": key,
+            "label": display_name,
+            "expiry_code": code,
+            "expiry_date": exp.isoformat() if exp else None,
+        })
+    items.sort(key=lambda x: x["expiry_date"] or "9999-99-99")
+    return {"products": items, "default": items[0]["key"] if items else "WKI"}
+
+
 @router.get("/api/v1/options/status")
 async def get_options_status(_: None = Depends(_require_api_token)):
     """Get current options market session status."""

@@ -148,12 +148,39 @@ document.addEventListener('alpine:init', () => {
       return (putOI / callOI).toFixed(2);
     },
 
+    // Products list (sorted by nearest expiry, pre-seeded with defaults)
+    products: [
+      { key: 'WKM', label: '위클리(월)', expiry_code: '', expiry_date: null },
+      { key: 'WKI', label: '위클리(목)', expiry_code: '', expiry_date: null },
+      { key: 'KOSPI200', label: 'KOSPI200', expiry_code: '', expiry_date: null },
+      { key: 'MKI', label: '미니', expiry_code: '', expiry_date: null },
+      { key: 'KQI', label: 'KOSDAQ150', expiry_code: '', expiry_date: null },
+    ],
+
     // Init
-    init() {
+    async init() {
+      await this._loadProducts();
       this._startPolling();
       this._pollOptionsStatus();
       this._loadInvestorHistory();
       this._loadFuturesHistory();
+    },
+
+    async _loadProducts() {
+      try {
+        const resp = await fetch('/api/v1/options/products');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        this.products = data.products || [];
+        // Update labels from server
+        for (const p of this.products) {
+          this.productLabels[p.key] = p.label;
+        }
+        // Auto-select nearest expiry product
+        if (data.default) this.activeProduct = data.default;
+      } catch (e) {
+        console.warn('Failed to load products:', e);
+      }
     },
 
     _startPolling() {
