@@ -19,7 +19,10 @@ from backend.config import settings
 from backend.futures_store import FuturesStore
 from backend.investor_store import InvestorStore
 from backend.kis_client import KISAuthError, KISClient
-from backend.market_status import get_options_market_status
+from backend.market_status import get_market_status, get_options_market_status
+
+# Products that trade on the night session (18:00~05:00 KST)
+_NIGHT_PRODUCTS = {"WKI", "WKM"}
 
 logger = logging.getLogger(__name__)
 
@@ -331,11 +334,18 @@ class OptionsDataService:
             self._clients.discard(ws)
             self._client_products.pop(ws, None)
 
+    def _is_product_session_open(self, product_key: str) -> bool:
+        """Return True if the market session for this product is currently open."""
+        if product_key in _NIGHT_PRODUCTS:
+            return get_market_status().is_open
+        return get_options_market_status().is_open
+
     async def _board_poll_loop(self):
         while self._running:
-            status = get_options_market_status()
-            if status.is_open and self._kis_client:
+            if self._kis_client:
                 for product_key in self._active_products():
+                    if not self._is_product_session_open(product_key):
+                        continue
                     try:
                         cfg = PRODUCTS.get(product_key, PRODUCTS["WKI"])
                         _, market_iscd, _, _, board_code = cfg
@@ -368,9 +378,10 @@ class OptionsDataService:
 
     async def _investor_poll_loop(self):
         while self._running:
-            status = get_options_market_status()
-            if status.is_open and self._kis_client:
+            if self._kis_client:
                 for product_key in self._active_products():
+                    if not self._is_product_session_open(product_key):
+                        continue
                     try:
                         cfg = PRODUCTS.get(product_key, PRODUCTS["WKI"])
                         _, market_iscd, call_iscd2, put_iscd2, _ = cfg
@@ -403,8 +414,7 @@ class OptionsDataService:
         """Poll KOSPI200 daytime futures price every 2s via REST (H0ZFCNT0 equivalent)."""
         symbol = _compute_kospi200_futures_symbol()
         while self._running:
-            status = get_options_market_status()
-            if status.is_open and self._kis_client:
+            if get_options_market_status().is_open and self._kis_client:
                 # Recompute symbol daily in case of rollover
                 symbol = _compute_kospi200_futures_symbol()
                 try:
