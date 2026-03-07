@@ -280,6 +280,149 @@ async def get_options_latest(request: Request, product: str = "WKI", _=Depends(_
     return snapshot
 
 
+@router.get("/api/v1/sector/latest")
+async def get_sector_latest(request: Request, _=Depends(_require_api_token)):
+    """Get latest sector snapshot (most recent 5-min poll)."""
+    sector_data = request.app.state.sector_data
+    snapshot = sector_data.get_latest_snapshot()
+    if snapshot:
+        return snapshot
+    # Fallback: query store
+    rows = await sector_data.store.get_latest_snapshots()
+    if rows:
+        return {"type": "sector_update", "ts": rows[0]["ts"] if rows else 0, "sectors": rows}
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Sector data not available yet",
+    )
+
+
+@router.get("/api/v1/sector/history")
+async def get_sector_history(
+    request: Request,
+    sector_code: str,
+    limit: int = 60,
+    _=Depends(_require_api_token),
+):
+    """Get intraday history for a specific sector code."""
+    sector_data = request.app.state.sector_data
+    rows = await sector_data.store.get_history(sector_code, limit=limit)
+    return {"sector_code": sector_code, "rows": rows}
+
+
+@router.get("/api/v1/sector/daily")
+async def get_sector_daily(
+    request: Request,
+    days: int = 30,
+    _=Depends(_require_api_token),
+):
+    """Get recent N days of daily sector summaries."""
+    sector_data = request.app.state.sector_data
+    rows = await sector_data.store.get_daily_summaries(days=days)
+    return {"rows": rows}
+
+
+@router.websocket("/ws/sector")
+async def ws_sector(websocket: WebSocket):
+    """WebSocket endpoint: real-time sector analysis stream to browsers."""
+    if not _require_ws_token(websocket):
+        logger.warning("WS /ws/sector rejected: invalid token")
+        await websocket.close(code=4401)
+        return
+
+    origin = websocket.headers.get("origin")
+    if not _is_allowed_origin(origin):
+        logger.warning("WS /ws/sector rejected: origin=%s", origin)
+        await websocket.close(code=4003)
+        return
+
+    client_ip = websocket.client.host if websocket.client else "unknown"
+    try:
+        ban_manager = websocket.app.state.ban_manager
+        if ban_manager.is_banned(client_ip):
+            await websocket.close(code=4429)
+            return
+    except Exception:
+        pass
+
+    if _ws_connections[client_ip] >= _WS_MAX_PER_IP:
+        logger.warning("WS /ws/sector rejected: too many connections from %s", client_ip)
+        try:
+            websocket.app.state.ban_manager.record_violation(client_ip, "ws_spam")
+        except Exception:
+            pass
+        await websocket.close(code=4029)
+        return
+
+    await websocket.accept()
+    _ws_connections[client_ip] += 1
+    sector_data = websocket.app.state.sector_data
+    await sector_data.add_client(websocket)
+    try:
+        while True:
+            data = await _ws_receive_with_timeout(websocket)
+            if data is None:
+                logger.debug("WS /ws/sector idle timeout for %s", client_ip)
+                await websocket.close(code=1001)
+                break
+            if len(data.encode()) > _WS_MAX_MSG_BYTES:
+                logger.warning("WS /ws/sector oversized message from %s", client_ip)
+                continue
+            if data == "ping":
+                await websocket.send_text('{"type":"pong"}')
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.debug("Sector WS client error: %s", e)
+    finally:
+        _ws_connections[client_ip] = max(0, _ws_connections[client_ip] - 1)
+        sector_data.remove_client(websocket)
+
+
+@router.get("/api/v1/leaders/top")
+async def get_leaders_top(request: Request, n: int = 50, _=Depends(_require_api_token)):
+    """주도주 스코어 상위 N개 (전체)."""
+    store = request.app.state.leader_store
+    rows = await store.get_latest_scores(top_n=n)
+    return {"ts": int(__import__("time").time()), "leaders": rows, "count": len(rows)}
+
+
+@router.get("/api/v1/leaders/sector")
+async def get_leaders_by_sector(
+    request: Request,
+    code: str,
+    _=Depends(_require_api_token),
+):
+    """섹터별 주도주 (sector_code 기준, 예: G25)."""
+    store = request.app.state.leader_store
+    rows = await store.get_scores_by_sector(code)
+    return {"sector_code": code, "leaders": rows, "count": len(rows)}
+
+
+@router.get("/api/v1/leaders/detail")
+async def get_leader_detail(
+    request: Request,
+    code: str,
+    _=Depends(_require_api_token),
+):
+    """종목 상세 (스코어 + 최근 1시간 스냅샷)."""
+    store = request.app.state.leader_store
+    detail = await store.get_score_detail(code)
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No data for {code}",
+        )
+    return detail
+
+
+@router.get("/api/v1/leaders/status")
+async def get_leaders_status(request: Request, _=Depends(_require_api_token)):
+    """폴러 상태 (사이클 수, 마지막 업데이트, daily_call_count)."""
+    poller = request.app.state.watchlist_poller
+    return poller.get_status()
+
+
 @router.websocket("/ws/options")
 async def ws_options(websocket: WebSocket, product: str = "WKI"):
     """WebSocket endpoint: real-time options stream to browsers."""

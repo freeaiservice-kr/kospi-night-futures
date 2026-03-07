@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="KOSPI 200 섹터 분석 - 업종별 등락률·주도주 실시간">
+  <meta name="robots" content="index, follow">
+  <title>야선 - 섹터 분석</title>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-GW00DCSL85"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-GW00DCSL85');
+  </script>
+  <link rel="canonical" href="https://xn--6i4bt3f.com/sector">
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="야선">
+  <meta property="og:title" content="야선 - 섹터 분석">
+  <meta property="og:description" content="KOSPI 업종별 등락률·주도주 실시간 분석">
+  <meta property="og:url" content="https://xn--6i4bt3f.com/sector">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Fira+Sans:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <header class="header">
+    <a href="/" class="header__title">야선</a>
+    <nav class="header__nav">
+      <a href="/">야간선물</a>
+      <a href="/sector.html" class="nav-active">섹터분석</a>
+    </nav>
+  </header>
+
+  <div x-data="{ activeTab: 'sectors' }" x-init="$store.sector.init(); $store.leader.init()" class="container" style="max-width:1280px;margin:0 auto;padding:16px;">
+
+    <!-- Tab bar -->
+    <div style="display:flex;align-items:center;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border-color,#333);">
+      <button
+        @click="activeTab='sectors'"
+        :style="activeTab==='sectors' ? 'border-bottom:2px solid var(--color-accent);color:var(--color-accent);' : 'border-bottom:2px solid transparent;color:var(--text-secondary);'"
+        style="background:none;border:none;border-radius:0;padding:8px 18px;font-size:0.88rem;font-weight:600;cursor:pointer;font-family:inherit;transition:color 0.15s;"
+      >섹터 현황</button>
+      <button
+        @click="activeTab='leaders'"
+        :style="activeTab==='leaders' ? 'border-bottom:2px solid var(--color-accent);color:var(--color-accent);' : 'border-bottom:2px solid transparent;color:var(--text-secondary);'"
+        style="background:none;border:none;border-radius:0;padding:8px 18px;font-size:0.88rem;font-weight:600;cursor:pointer;font-family:inherit;transition:color 0.15s;"
+      >주도주 랭킹</button>
+    </div>
+
+    <!-- ===== 섹터 현황 탭 ===== -->
+    <div x-show="activeTab==='sectors'">
+
+      <!-- Status bar -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <h1 style="font-size:1.1rem;font-weight:700;color:var(--color-accent);">섹터 분석</h1>
+          <span
+            class="status-badge"
+            :class="{
+              'status-badge--connected': $store.sector.connectionState === 'connected',
+              'status-badge--reconnecting': $store.sector.connectionState === 'reconnecting',
+              'status-badge--disconnected': $store.sector.connectionState === 'disconnected',
+            }"
+            x-text="$store.sector.connectionState === 'connected' ? '실시간' : $store.sector.connectionState === 'reconnecting' ? '연결중' : '대기중'"
+          ></span>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);">
+          <span x-show="$store.sector.lastUpdated">
+            업데이트: <span x-text="$store.sector.lastUpdated" style="font-family:'Fira Code',monospace;"></span>
+          </span>
+          <span x-show="!$store.sector.isMarketOpen" style="color:var(--text-secondary);">장외시간</span>
+        </div>
+      </div>
+
+      <!-- No data state -->
+      <div x-show="$store.sector.sectors.length === 0" class="card" style="text-align:center;padding:48px 16px;">
+        <div style="color:var(--text-secondary);font-size:0.9rem;">
+          <span x-show="$store.sector.isMarketOpen">섹터 데이터를 불러오는 중...</span>
+          <span x-show="!$store.sector.isMarketOpen">장중(09:00~15:30)에 업종 데이터가 표시됩니다.</span>
+        </div>
+      </div>
+
+      <!-- Fixed sectors grid -->
+      <div x-show="$store.sector.fixedSectors.length > 0">
+        <div class="card__title" style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-secondary);margin-bottom:12px;">주요 업종</div>
+        <div class="sector-grid">
+          <template x-for="sector in $store.sector.fixedSectors" :key="sector.sector_code">
+            <div class="sector-card">
+              <div class="sector-card__header">
+                <span class="sector-card__name" x-text="sector.sector_name"></span>
+                <span
+                  class="sector-card__change"
+                  :class="$store.sector.changeClass(sector.change_pct)"
+                  x-text="$store.sector.fmtPct(sector.change_pct)"
+                ></span>
+              </div>
+              <!-- Captain -->
+              <div x-show="sector.captain" class="sector-card__captain">
+                <span style="color:var(--color-warning);font-size:0.68rem;font-weight:700;margin-right:4px;">대장</span>
+                <span x-text="sector.captain?.hts_kor_isnm || sector.captain?.name || '—'" style="font-size:0.82rem;font-weight:600;"></span>
+              </div>
+              <!-- Leaders -->
+              <div x-show="sector.leaders && sector.leaders.length > 0" class="sector-card__leaders">
+                <div style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">주도주</div>
+                <template x-for="(leader, idx) in (sector.leaders || []).slice(0, 3)" :key="leader.code">
+                  <div class="sector-leader-row">
+                    <span class="sector-leader-rank" x-text="idx + 1"></span>
+                    <span class="sector-leader-name" x-text="leader.name"></span>
+                    <span
+                      class="sector-leader-change"
+                      :class="$store.sector.changeClass(leader.change_pct)"
+                      x-text="$store.sector.fmtPct(leader.change_pct)"
+                    ></span>
+                  </div>
+                </template>
+              </div>
+              <!-- Volume -->
+              <div x-show="sector.acml_tr_pbmn" style="margin-top:6px;font-size:0.68rem;color:var(--text-secondary);">
+                거래대금 <span style="color:var(--text-primary);font-family:'Fira Code',monospace;" x-text="$store.sector.fmtVol(sector.acml_tr_pbmn)"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Dynamic sectors -->
+      <div x-show="$store.sector.dynamicSectors.length > 0" style="margin-top:20px;">
+        <div class="card__title" style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-secondary);margin-bottom:12px;">등락률 상위 동적 업종</div>
+        <div class="sector-grid">
+          <template x-for="sector in $store.sector.dynamicSectors" :key="sector.sector_code">
+            <div class="sector-card sector-card--dynamic">
+              <div class="sector-card__header">
+                <span class="sector-card__name" x-text="sector.sector_name"></span>
+                <span
+                  class="sector-card__change"
+                  :class="$store.sector.changeClass(sector.change_pct)"
+                  x-text="$store.sector.fmtPct(sector.change_pct)"
+                ></span>
+              </div>
+              <div x-show="sector.leaders && sector.leaders.length > 0" class="sector-card__leaders">
+                <template x-for="(leader, idx) in (sector.leaders || []).slice(0, 3)" :key="leader.code">
+                  <div class="sector-leader-row">
+                    <span class="sector-leader-rank" x-text="idx + 1"></span>
+                    <span class="sector-leader-name" x-text="leader.name"></span>
+                    <span
+                      class="sector-leader-change"
+                      :class="$store.sector.changeClass(leader.change_pct)"
+                      x-text="$store.sector.fmtPct(leader.change_pct)"
+                    ></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+    </div><!-- /섹터 현황 탭 -->
+
+    <!-- ===== 주도주 랭킹 탭 ===== -->
+    <div x-show="activeTab==='leaders'">
+
+      <!-- Status bar -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <h2 style="font-size:1.0rem;font-weight:700;color:var(--color-accent);">주도주 랭킹</h2>
+        <div style="font-size:0.78rem;color:var(--text-secondary);">
+          <span x-show="$store.leader.loading" style="color:var(--color-warning);">로딩 중...</span>
+          <span x-show="$store.leader.lastUpdated && !$store.leader.loading">
+            업데이트: <span x-text="$store.leader.lastUpdated" style="font-family:'Fira Code',monospace;"></span>
+          </span>
+        </div>
+      </div>
+
+      <!-- No data -->
+      <div x-show="$store.leader.leaders.length === 0 && !$store.leader.loading" class="card" style="text-align:center;padding:48px 16px;">
+        <div style="color:var(--text-secondary);font-size:0.9rem;">장중(09:00~15:30)에 주도주 데이터가 표시됩니다.</div>
+      </div>
+
+      <!-- Leaders table -->
+      <div x-show="$store.leader.leaders.length > 0" style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border-color,#333);color:var(--text-secondary);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;">
+              <th style="padding:6px 8px;text-align:center;width:36px;">#</th>
+              <th style="padding:6px 8px;text-align:left;">종목</th>
+              <th style="padding:6px 8px;text-align:center;">섹터</th>
+              <th style="padding:6px 8px;text-align:right;">스코어</th>
+              <th style="padding:6px 8px;text-align:right;">등락률</th>
+              <th style="padding:6px 8px;text-align:right;">거래증가(1h)</th>
+              <th style="padding:6px 8px;text-align:right;">체결강도</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(leader, idx) in $store.leader.leaders" :key="leader.code">
+              <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                <td style="padding:7px 8px;text-align:center;color:var(--text-secondary);font-family:'Fira Code',monospace;font-size:0.75rem;" x-text="idx + 1"></td>
+                <td style="padding:7px 8px;">
+                  <span style="font-weight:600;" x-text="leader.name"></span>
+                  <span style="font-size:0.7rem;color:var(--text-secondary);margin-left:4px;font-family:'Fira Code',monospace;" x-text="leader.code"></span>
+                </td>
+                <td style="padding:7px 8px;text-align:center;">
+                  <span style="font-size:0.72rem;padding:2px 6px;border-radius:3px;background:rgba(255,255,255,0.06);" x-text="$store.leader.sectorLabel(leader.sector_category)"></span>
+                </td>
+                <td style="padding:7px 8px;text-align:right;font-family:'Fira Code',monospace;color:var(--color-accent);font-weight:600;" x-text="$store.leader.fmtScore(leader.score)"></td>
+                <td style="padding:7px 8px;text-align:right;font-family:'Fira Code',monospace;"
+                    :class="$store.leader.changeClass(leader.change_pct)"
+                    x-text="$store.leader.fmtPct(leader.change_pct)"></td>
+                <td style="padding:7px 8px;text-align:right;font-family:'Fira Code',monospace;color:var(--color-warning);"
+                    x-text="leader.vol_surge_1h != null ? $store.leader.fmtSurge(leader.vol_surge_1h) : '—'"></td>
+                <td style="padding:7px 8px;text-align:right;font-family:'Fira Code',monospace;font-size:0.78rem;"
+                    x-text="leader.score_detail?.buy_power_ratio != null ? leader.score_detail.buy_power_ratio.toFixed(0) + '%' : '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:10px;font-size:0.7rem;color:var(--text-secondary);text-align:right;">
+        48개 시드 종목 · 5분 갱신 · 거래증가율(1h/2h/4h)+체결강도+52주고가+회전율 종합
+      </div>
+
+    </div><!-- /주도주 랭킹 탭 -->
+
+  </div>
+
+  <footer class="footer">
+    <p>데이터 출처: 한국투자증권 Open API · 장중(09:00~15:30 KST) · <a href="/privacy.html">개인정보처리방침</a></p>
+  </footer>
+</body>
+</html>

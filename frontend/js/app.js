@@ -6,6 +6,8 @@
 import './futuresStore.js';
 import './optionsStore.js';
 import './uiStore.js';
+import './sectorStore.js';
+import './leaderStore.js';
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('dashboardApp', () => ({

@@ -23,9 +23,9 @@ def mock_options_data():
     svc.start = AsyncMock()
     svc.stop = AsyncMock()
     svc.get_latest_snapshot = MagicMock(return_value=None)
+    svc._last_futures = None
     svc.futures_store = MagicMock()
     svc.futures_store.get_history = AsyncMock(return_value=[])
     svc.investor_store = MagicMock()
     svc.investor_store.get_history = AsyncMock(return_value=[])
-    svc.get_latest_snapshot.return_value = None
     return svc

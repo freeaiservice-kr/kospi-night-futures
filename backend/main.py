@@ -15,9 +15,14 @@ from slowapi.util import get_remote_address
 from backend.api import router
 from backend.ban_manager import BanManager
 from backend.config import settings
+from backend.kis_client import KISClient
+from backend.leader_scorer import LeaderScorer
+from backend.leader_store import LeaderStore
 from backend.market_data import MarketDataService
 from backend.middleware import BotBlockingMiddleware, IPBanMiddleware, SecurityHeadersMiddleware
 from backend.options_data import OptionsDataService
+from backend.sector_service import SectorAnalysisService
+from backend.watchlist_poller import WatchlistPoller
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -42,16 +47,36 @@ async def _cleanup_loop(app: FastAPI) -> None:
 async def lifespan(app: FastAPI):
     logger.info("Starting KOSPI Night Futures service...")
     app.state.ban_manager = BanManager()
+    kis_client = KISClient()
     market_data = MarketDataService()
-    options_data = OptionsDataService()
+    options_data = OptionsDataService(kis_client=kis_client)
+    sector_data = SectorAnalysisService(kis_client=kis_client)
+    leader_store = LeaderStore()
+    leader_scorer = LeaderScorer(leader_store)
+    watchlist_poller = WatchlistPoller(kis_client, leader_store, leader_scorer)
     app.state.market_data = market_data
     app.state.options_data = options_data
+    app.state.sector_data = sector_data
+    app.state.watchlist_poller = watchlist_poller
+    app.state.leader_store = leader_store
     cleanup_task = asyncio.create_task(_cleanup_loop(app))
-    await asyncio.gather(market_data.start(), options_data.start())
+    await asyncio.gather(
+        market_data.start(),
+        options_data.start(),
+        sector_data.start(),
+        watchlist_poller.start(),
+    )
     logger.info("Service started.")
     yield
     cleanup_task.cancel()
-    await asyncio.gather(market_data.stop(), options_data.stop())
+    await asyncio.gather(
+        market_data.stop(),
+        options_data.stop(),
+        sector_data.stop(),
+        watchlist_poller.stop(),
+    )
+    await leader_store.close()
+    await kis_client.close()
     logger.info("Shutdown complete.")
 
 
